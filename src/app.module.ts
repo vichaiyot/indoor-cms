@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { AuthController } from './auth/auth.controller';
-import { AuthService } from './auth/auth.service';
-import { EventController } from './event/event.controller';
-import { EventService } from './event/event.service';
+import { AuthController } from './workflow/auth/auth.controller';
+import { AuthService } from './workflow/auth/auth.service';
+import { EventController } from './workflow/event/event.controller';
+import { EventService } from './workflow/event/event.service';
 
 @Module({
   controllers: [AuthController, EventController],
