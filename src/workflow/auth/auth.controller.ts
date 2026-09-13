@@ -36,7 +36,7 @@ export class AuthController {
   @ApiParam({ name: 'id', description: 'Auth ID', type: String })
   @ApiResponse({ status: 200, description: 'Return auth record' })
   findOne(@Param('id') id: string) {
-    return this.authService.findOne(+id);
+    return this.authService.findOne(id);
   }
 
   @Patch(':id')
@@ -44,7 +44,7 @@ export class AuthController {
   @ApiParam({ name: 'id', description: 'Auth ID', type: String })
   @ApiResponse({ status: 200, description: 'Auth record updated' })
   update(@Param('id') id: string, @Body() updateAuthDto: UpdateAuthDto) {
-    return this.authService.update(+id, updateAuthDto);
+    return this.authService.update(id, updateAuthDto);
   }
 
   @Delete(':id')
@@ -52,6 +52,6 @@ export class AuthController {
   @ApiParam({ name: 'id', description: 'Auth ID', type: String })
   @ApiResponse({ status: 200, description: 'Auth record removed' })
   remove(@Param('id') id: string) {
-    return this.authService.remove(+id);
+    return this.authService.remove(id);
   }
 }
