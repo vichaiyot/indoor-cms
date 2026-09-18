@@ -89,7 +89,7 @@ export class SizeDto {
 
 export class CreateBoothDto {
   @ApiProperty({
-    example: 'A01',
+    example: 'string',
     description: 'Booth identification number/code',
   })
   @IsString()
@@ -97,7 +97,7 @@ export class CreateBoothDto {
   boothNumber: string;
 
   @ApiProperty({
-    example: 'DeepMind AI Showcase',
+    example: 'string',
     description: 'Booth or exhibitor name',
   })
   @IsString()
@@ -105,7 +105,7 @@ export class CreateBoothDto {
   name: string;
 
   @ApiPropertyOptional({
-    example: 'Showcasing the latest in AI and robotics technology',
+    example: 'string',
     description: 'Booth description',
   })
   @IsString()
@@ -113,7 +113,7 @@ export class CreateBoothDto {
   description?: string;
 
   @ApiPropertyOptional({
-    example: 'Technology & AI',
+    example: 'string',
     description: 'Category or industry sector',
   })
   @IsString()
@@ -130,7 +130,7 @@ export class CreateBoothDto {
   status?: BoothStatus;
 
   @ApiPropertyOptional({
-    example: 'room',
+    example: 'string',
     default: 'room',
     description: 'Type of object (e.g. room, booth, facility, stage)',
   })

@@ -284,7 +284,37 @@ Base URL: `http://localhost:3000`
 
 ---
 
-#### 1.4 ลบแผนที่หลัก (Delete Map by ID)
+#### 1.4 แก้ไขข้อมูลแผนที่หลัก (Update Map Info / Dimensions)
+- **Method / URL**: `PATCH /maps/:id`
+- **Path Parameters**:
+  - `id` (string, required): UUID ของแผนที่
+- **Request Body** (`application/json`):
+  สามารถส่งฟิลด์ที่ต้องการแก้ไขเฉพาะบางส่วนได้:
+  ```json
+  {
+    "name": "Challenger Hall 1 (Renovated)",
+    "width": 2000,
+    "imageUrl": "https://example.com/floorplans/hall1-v2.png"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "id": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
+    "name": "Challenger Hall 1 (Renovated)",
+    "building": "Impact Muang Thong Thani",
+    "floor": "1",
+    "imageUrl": "https://example.com/floorplans/hall1-v2.png",
+    "width": 2000,
+    "height": 1080,
+    "createdAt": "2026-09-15T00:00:00.000Z",
+    "updatedAt": "2026-09-18T07:30:12.570Z"
+  }
+  ```
+
+---
+
+#### 1.5 ลบแผนที่หลัก (Delete Map by ID)
 - **Method / URL**: `DELETE /maps/:id`
 - **คำอธิบาย**: ลบข้อมูลแผนที่ พร้อมทั้ง cascade ลบข้อมูลบูธและโครงข่ายเส้นทางเดิน (Paths) ทั้งหมดที่ผูกอยู่กับแผนที่นี้โดยอัตโนมัติ
 - **Path Parameters**:
@@ -299,7 +329,7 @@ Base URL: `http://localhost:3000`
 
 ---
 
-#### 1.5 แสดงแผนที่รวมบูธทั้งหมด (Full Map with Booths)
+#### 1.6 แสดงแผนที่รวมบูธทั้งหมด (Full Map with Booths)
 - **Method / URL**: `GET /maps/:id/full`
 - **คำอธิบาย**: ดึงข้อมูลผังแผนที่หลัก พร้อมรายการบูธและพิกัดตำแหน่งทั้งหมดในครั้งเดียว สำหรับการ Render บน Canvas / 3D Scene
 - **Path Parameters**:

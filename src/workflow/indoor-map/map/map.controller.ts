@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   HttpCode,
   HttpStatus,
@@ -16,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { MapService } from './map.service';
 import { CreateMapDto } from '../../../dto/indoor-map/map/create-map.dto';
+import { UpdateMapDto } from '../../../dto/indoor-map/map/update-map.dto';
 
 @ApiTags('Indoor Maps')
 @Controller()
@@ -50,6 +52,20 @@ export class MapController {
   @ApiParam({ name: 'id', description: 'Map UUID' })
   findMapById(@Param('id') id: string) {
     return this.mapService.findMapById(id);
+  }
+
+  @Patch('maps/:id')
+  @ApiOperation({
+    summary: 'แก้ไขข้อมูลแผนที่หลัก (Update Map Info / Dimensions)',
+    description: 'แก้ไขข้อมูลแผนที่ เช่น ชื่อฮอลล์, อาคาร, ชั้น, ภาพแปลน หรือขนาดของผัง',
+  })
+  @ApiParam({ name: 'id', description: 'Map UUID' })
+  @ApiResponse({ status: 200, description: 'แก้ไขข้อมูลแผนที่สำเร็จ' })
+  updateMap(
+    @Param('id') id: string,
+    @Body() updateMapDto: UpdateMapDto,
+  ) {
+    return this.mapService.updateMap(id, updateMapDto);
   }
 
   @Delete('maps/:id')

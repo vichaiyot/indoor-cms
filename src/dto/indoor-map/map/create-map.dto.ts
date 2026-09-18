@@ -3,7 +3,7 @@ import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateMapDto {
   @ApiProperty({
-    example: 'Challenger Hall 1',
+    example: 'string',
     description: 'Name of the map or hall',
   })
   @IsString()
@@ -11,7 +11,7 @@ export class CreateMapDto {
   name: string;
 
   @ApiPropertyOptional({
-    example: 'Impact Muang Thong Thani',
+    example: 'string',
     description: 'Building or venue name',
   })
   @IsString()
@@ -19,7 +19,7 @@ export class CreateMapDto {
   building?: string;
 
   @ApiPropertyOptional({
-    example: '1',
+    example: 'string',
     description: 'Floor level / identifier',
   })
   @IsString()
@@ -27,7 +27,7 @@ export class CreateMapDto {
   floor?: string;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/floorplans/hall1.png',
+    example: 'URL',
     description: 'Image URL of floor plan background',
   })
   @IsString()

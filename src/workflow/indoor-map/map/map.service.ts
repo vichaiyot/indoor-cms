@@ -9,6 +9,7 @@ import { Map, MapDocument } from '../../../schema/indoor-map/map/map.schema';
 import { Booth, BoothDocument } from '../../../schema/indoor-map/booth/booth.schema';
 import { PathGraph, PathGraphDocument } from '../../../schema/indoor-map/path/path-graph.schema';
 import { CreateMapDto } from '../../../dto/indoor-map/map/create-map.dto';
+import { UpdateMapDto } from '../../../dto/indoor-map/map/update-map.dto';
 
 @Injectable()
 export class MapService {
@@ -66,6 +67,25 @@ export class MapService {
     }
 
     return map;
+  }
+
+  /**
+   * 4. แก้ไขข้อมูลแผนที่หลัก (Update Map Info / Dimensions / Image)
+   */
+  async updateMap(id: string, updateMapDto: UpdateMapDto): Promise<Map> {
+    const map = await this.findMapById(id);
+
+    try {
+      Object.assign(map, updateMapDto);
+      return await map.save();
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        throw new ConflictException(
+          `แผนที่ชื่อ "${updateMapDto.name ?? map.name}" ในอาคาร "${updateMapDto.building ?? map.building ?? 'N/A'}" ชั้น "${updateMapDto.floor ?? map.floor ?? 'N/A'}" มีอยู่ในระบบแล้ว`,
+        );
+      }
+      throw error;
+    }
   }
 
   /**
