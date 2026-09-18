@@ -1,19 +1,10 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
-import { Map, MapSchema } from '../../entities/indoor-map/map.schema';
-import { Booth, BoothSchema } from '../../entities/indoor-map/booth.schema';
-import { IndoorMapService } from './indoor-map.service';
-import { IndoorMapController } from './indoor-map.controller';
+import { MapModule } from './map/map.module';
+import { BoothModule } from './booth/booth.module';
+import { PathModule } from './path/path.module';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([
-      { name: Map.name, schema: MapSchema },
-      { name: Booth.name, schema: BoothSchema },
-    ]),
-  ],
-  controllers: [IndoorMapController],
-  providers: [IndoorMapService],
-  exports: [IndoorMapService],
+  imports: [MapModule, BoothModule, PathModule],
+  exports: [MapModule, BoothModule, PathModule],
 })
 export class IndoorMapModule { }

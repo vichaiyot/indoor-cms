@@ -18,6 +18,9 @@ async function bootstrap() {
     .setDescription('Indoor CMS API Documentation & Specification')
     .setVersion('1.0')
     .addBearerAuth()
+    .addTag('Indoor Maps')
+    .addTag('Booths')
+    .addTag('Paths & Navigation')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

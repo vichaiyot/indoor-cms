@@ -120,4 +120,3 @@ BoothSchema.index(
 
 // 2. Geospatial index สำหรับการค้นหาพิกัดโลกจริง (GPS 2dsphere)
 BoothSchema.index({ geo: '2dsphere' }, { sparse: true });
-

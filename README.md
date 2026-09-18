@@ -14,6 +14,7 @@
 - [คู่มือ API (API Reference)](#-คู่มือ-api-api-reference)
   - [1. แผนที่หลัก (Maps)](#1-แผนที่หลัก-maps)
   - [2. บูธและตำแหน่งพิกัด (Booths)](#2-บูธและตำแหน่งพิกัด-booths)
+  - [3. โครงข่ายเส้นทางเดินสำหรับคำนวณ A* (Paths / Navigation Graph)](#3-โครงข่ายเส้นทางเดินสำหรับคำนวณ-a-paths--navigation-graph)
 - [Interactive API Documentation (Swagger)](#-interactive-api-documentation-swagger)
 - [การจัดการข้อผิดพลาด (Error Handling)](#-การจัดการข้อผิดพลาด-error-handling)
 
@@ -61,20 +62,38 @@ indoor-cms/
 ├── src/
 │   ├── main.ts                             # Bootstrap, ValidationPipe, Swagger setup
 │   ├── app.module.ts                       # Root module เชื่อมต่อ Config และ Mongoose
-│   ├── entities/                           # Mongoose Schemas & Database Models
+│   ├── schema/                             # Mongoose Schemas & Database Models
 │   │   └── indoor-map/
-│   │       ├── map.schema.ts               # Schema แผนที่อาคาร
-│   │       └── booth.schema.ts             # Schema บูธและพิกัดตำแหน่ง
+│   │       ├── map/                        # 1. Schema แผนที่อาคาร
+│   │       │   └── map.schema.ts
+│   │       ├── booth/                      # 2. Schema บูธและพิกัดตำแหน่ง
+│   │       │   └── booth.schema.ts
+│   │       └── path/                       # 3. Schema โครงข่ายเส้นทางเดินสำหรับ A*
+│   │           └── path-graph.schema.ts
 │   ├── dto/                                # Data Transfer Objects + Validation Rules
 │   │   └── indoor-map/
-│   │       ├── create-map.dto.ts           # DTO สร้างแผนที่
-│   │       ├── create-booth.dto.ts         # DTO สร้างบูธ
-│   │       └── update-booth.dto.ts         # DTO แก้ไขบูธ
+│   │       ├── map/                        # 1. DTO สร้างแผนที่
+│   │       │   └── create-map.dto.ts
+│   │       ├── booth/                      # 2. DTO สร้างและแก้ไขบูธ
+│   │       │   ├── create-booth.dto.ts
+│   │       │   └── update-booth.dto.ts
+│   │       └── path/                       # 3. DTO บันทึกโครงข่ายเส้นทางเดิน
+│   │           └── save-path-graph.dto.ts
 │   └── workflow/                           # Feature Modules (Controllers & Services)
 │       └── indoor-map/
-│           ├── indoor-map.module.ts        # รวม Controller, Service, Models
-│           ├── indoor-map.controller.ts    # กำหนดเส้นทาง API และ Swagger annotations
-│           └── indoor-map.service.ts       # Business Logic การคำนวณและประมวลผลข้อมูล
+│           ├── indoor-map.module.ts        # Aggregator Module รวมย่อยทั้ง 3 ด้าน
+│           ├── map/                        # 1. แผนที่หลักและผังอาคาร (Maps)
+│           │   ├── map.controller.ts
+│           │   ├── map.service.ts
+│           │   └── map.module.ts
+│           ├── booth/                      # 2. บูธและตำแหน่งพิกัด (Booths)
+│           │   ├── booth.controller.ts
+│           │   ├── booth.service.ts
+│           │   └── booth.module.ts
+│           └── path/                       # 3. โครงข่ายทางเดินสำหรับ A* (Paths)
+│               ├── path.controller.ts
+│               ├── path.service.ts
+│               └── path.module.ts
 ```
 
 ---
@@ -265,7 +284,22 @@ Base URL: `http://localhost:3000`
 
 ---
 
-#### 1.4 แสดงแผนที่รวมบูธทั้งหมด (Full Map with Booths)
+#### 1.4 ลบแผนที่หลัก (Delete Map by ID)
+- **Method / URL**: `DELETE /maps/:id`
+- **คำอธิบาย**: ลบข้อมูลแผนที่ พร้อมทั้ง cascade ลบข้อมูลบูธและโครงข่ายเส้นทางเดิน (Paths) ทั้งหมดที่ผูกอยู่กับแผนที่นี้โดยอัตโนมัติ
+- **Path Parameters**:
+  - `id` (string, required): UUID ของแผนที่
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Map \"Challenger Hall 1\" and its associated booths and path graph deleted successfully"
+  }
+  ```
+
+---
+
+#### 1.5 แสดงแผนที่รวมบูธทั้งหมด (Full Map with Booths)
 - **Method / URL**: `GET /maps/:id/full`
 - **คำอธิบาย**: ดึงข้อมูลผังแผนที่หลัก พร้อมรายการบูธและพิกัดตำแหน่งทั้งหมดในครั้งเดียว สำหรับการ Render บน Canvas / 3D Scene
 - **Path Parameters**:
@@ -331,28 +365,7 @@ Base URL: `http://localhost:3000`
 - **Path Parameters**:
   - `mapId` (string, required): UUID หรือชื่อฮอลล์ของแผนที่ที่ต้องการผูกบูธไว้
 - **Request Body** (`application/json`):
-  สามารถส่งได้หลายรูปแบบตามความสะดวกของ Frontend:
-
-  **รูปแบบที่ 1: แบบย่อกระชับ (Flat & Simple - แนะนำสำหรับ Frontend)**
-  ```json
-  {
-    "boothNumber": "A01",
-    "name": "DeepMind AI Showcase",
-    "description": "Showcasing the latest in AI and robotics technology",
-    "category": "Technology & AI",
-    "status": "AVAILABLE",
-    "type": "room",
-    "position": [120.0, 340.0],
-    "width": 350.5,
-    "depth": 420,
-    "height": 300,
-    "rotation": 0,
-    "geo": [100.5489, 13.9113]
-  }
-  ```
-  *(ระบบจะคำนวณ `footprint` Polygon สี่เหลี่ยม 5 จุดพิกัดปิดรอบให้อัตโนมัติจาก position + size และ rotation)*
-
-  **รูปแบบที่ 2: แบบมาตรฐานเต็ม (Full GeoJSON Object)**
+  ส่งข้อมูลตามมาตรฐาน GeoJSON พร้อมขอบเขตพื้นที่ `footprint` (Polygon) ที่ Frontend คำนวณมา:
   ```json
   {
     "boothNumber": "A01",
@@ -368,18 +381,20 @@ Base URL: `http://localhost:3000`
     "rotation": 0,
     "size": {
       "width": 350.5,
-      "depth": 420,
-      "height": 300
+      "depth": 420.0,
+      "height": 300.0
     },
     "footprint": {
       "type": "Polygon",
-      "coordinates": [[
-        [120.0, 340.0],
-        [470.5, 340.0],
-        [470.5, 760.0],
-        [120.0, 760.0],
-        [120.0, 340.0]
-      ]]
+      "coordinates": [
+        [
+          [120.0, 340.0],
+          [470.5, 340.0],
+          [470.5, 760.0],
+          [120.0, 760.0],
+          [120.0, 340.0]
+        ]
+      ]
     },
     "geo": {
       "type": "Point",
@@ -387,6 +402,7 @@ Base URL: `http://localhost:3000`
     }
   }
   ```
+  *(หมายเหตุ: หากเคสไหน Frontend ไม่ได้ส่ง `footprint` มา ระบบจะช่วยคำนวณสี่เหลี่ยม 5 จุดพิกัดจาก position + size + rotation ให้เป็น Fallback อัตโนมัติ)*
 - **Response** (`201 Created`):
   ```json
   {
@@ -553,6 +569,134 @@ Base URL: `http://localhost:3000`
   {
     "success": true,
     "message": "Booth A01 deleted"
+  }
+  ```
+
+---
+
+### 3. โครงข่ายเส้นทางเดินสำหรับคำนวณ A* (Paths / Navigation Graph)
+
+ระบบจัดเก็บโครงข่ายทางเดิน (Nodes & Edges) ประจำแผนที่ เพื่อให้ Frontend ดึงข้อมูลออกไปรันอัลกอริทึม A* (A-Star) บน Client-side แบบ Real-time ได้ทันที
+
+#### 3.1 บันทึกหรืออัปเดตโครงข่ายเส้นทางเดิน (Save / Upsert Path Graph)
+- **Method / URL**: `POST /maps/:mapId/paths`
+- **Path Parameters**:
+  - `mapId` (string, required): UUID ของแผนที่ที่ต้องการผูกเส้นทางเดิน
+- **Request Body** (`application/json`):
+  ```json
+  {
+    "nodes": [
+      {
+        "id": "n1",
+        "name": "หน้าทางเข้าฮอลล์ 1",
+        "type": "door",
+        "position": { "type": "Point", "coordinates": [100.0, 200.0] }
+      },
+      {
+        "id": "n2",
+        "name": "ทางแยกหลัก",
+        "type": "intersection",
+        "position": { "type": "Point", "coordinates": [100.0, 340.0] }
+      },
+      {
+        "id": "n3",
+        "name": "จุดเชื่อมต่อหน้าบูธ A01",
+        "type": "waypoint",
+        "position": { "type": "Point", "coordinates": [120.0, 340.0] }
+      }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2", "bidirectional": true },
+      { "from": "n2", "to": "n3", "bidirectional": true }
+    ]
+  }
+  ```
+  *(หมายเหตุ: หากใน `edges` ไม่ได้ระบุ `weight` ระบบจะคำนวณระยะทางแบบ Euclidean Distance จากพิกัด x, y ให้โดยอัตโนมัติ)*
+- **Response** (`200 OK`):
+  ```json
+  {
+    "id": "63724ece-dc31-4085-95d5-b7b3b14dbca9",
+    "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
+    "totalNodes": 3,
+    "totalEdges": 2,
+    "nodes": [
+      {
+        "id": "n1",
+        "name": "หน้าทางเข้าฮอลล์ 1",
+        "type": "door",
+        "position": { "type": "Point", "coordinates": [100, 200] }
+      },
+      {
+        "id": "n2",
+        "name": "ทางแยกหลัก",
+        "type": "intersection",
+        "position": { "type": "Point", "coordinates": [100, 340] }
+      },
+      {
+        "id": "n3",
+        "name": "จุดเชื่อมต่อหน้าบูธ A01",
+        "type": "waypoint",
+        "position": { "type": "Point", "coordinates": [120, 340] }
+      }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2", "weight": 140, "bidirectional": true, "accessible": true },
+      { "from": "n2", "to": "n3", "weight": 20, "bidirectional": true, "accessible": true }
+    ],
+    "createdAt": "2026-09-18T04:53:37.653Z",
+    "updatedAt": "2026-09-18T05:03:04.837Z"
+  }
+  ```
+
+---
+
+#### 3.2 ดึงโครงข่ายเส้นทางเดินของแผนที่ (Get Path Graph for A* Calculation)
+- **Method / URL**: `GET /maps/:mapId/paths`
+- **Path Parameters**:
+  - `mapId` (string, required): UUID ของแผนที่
+- **Response** (`200 OK`):
+  ```json
+  {
+    "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
+    "totalNodes": 3,
+    "totalEdges": 2,
+    "nodes": [
+      {
+        "id": "n1",
+        "name": "หน้าทางเข้าฮอลล์ 1",
+        "type": "door",
+        "position": { "type": "Point", "coordinates": [100, 200] }
+      },
+      {
+        "id": "n2",
+        "name": "ทางแยกหลัก",
+        "type": "intersection",
+        "position": { "type": "Point", "coordinates": [100, 340] }
+      },
+      {
+        "id": "n3",
+        "name": "จุดเชื่อมต่อหน้าบูธ A01",
+        "type": "waypoint",
+        "position": { "type": "Point", "coordinates": [120, 340] }
+      }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2", "weight": 140, "bidirectional": true, "accessible": true },
+      { "from": "n2", "to": "n3", "weight": 20, "bidirectional": true, "accessible": true }
+    ]
+  }
+  ```
+  *(นอกจากนี้ยังสามารถดึงข้อมูลเส้นทางนี้พร้อมกับผังและบูธได้โดยตรงผ่าน `GET /maps/:id/full` ฟิลด์ `paths`)*
+
+---
+
+#### 3.3 ลบโครงข่ายเส้นทางเดิน (Delete Path Graph)
+- **Method / URL**: `DELETE /maps/:mapId/paths`
+- **Response** (`200 OK`):
+  ```json
+  {
+    "success": true,
+    "message": "Path graph for map \"Challenger Hall 1\" deleted"
   }
   ```
 

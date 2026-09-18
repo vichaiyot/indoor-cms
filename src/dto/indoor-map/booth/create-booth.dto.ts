@@ -11,7 +11,7 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { BoothStatus } from '../../entities/indoor-map/booth.schema';
+import { BoothStatus } from '../../../schema/indoor-map/booth/booth.schema';
 
 export class PointDto {
   @ApiProperty({
@@ -175,7 +175,7 @@ export class CreateBoothDto {
   @ApiPropertyOptional({
     type: PolygonDto,
     description:
-      '2D Footprint polygon coordinates on canvas (automatically calculated from position & size if omitted)',
+      '2D Footprint polygon coordinates on canvas: GeoJSON Polygon (บันทึกขอบเขตพื้นที่บูธ 2D)',
     example: {
       type: 'Polygon',
       coordinates: [
@@ -190,9 +190,7 @@ export class CreateBoothDto {
     },
   })
   @IsOptional()
-  @ValidateNested()
-  @Type(() => PolygonDto)
-  footprint?: PolygonDto;
+  footprint?: any;
 
   @ApiPropertyOptional({
     type: PointDto,
@@ -243,6 +241,3 @@ export class CreateBoothDto {
   @IsOptional()
   latitude?: number;
 }
-
-
-

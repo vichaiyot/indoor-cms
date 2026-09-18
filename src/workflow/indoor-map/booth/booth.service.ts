@@ -5,32 +5,21 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Map, MapDocument } from '../../entities/indoor-map/map.schema';
-import { Booth, BoothDocument } from '../../entities/indoor-map/booth.schema';
-import { CreateMapDto } from '../../dto/indoor-map/create-map.dto';
-import { CreateBoothDto } from '../../dto/indoor-map/create-booth.dto';
-import { UpdateBoothDto } from '../../dto/indoor-map/update-booth.dto';
+import { Booth, BoothDocument } from '../../../schema/indoor-map/booth/booth.schema';
+import { MapService } from '../map/map.service';
+import { CreateBoothDto } from '../../../dto/indoor-map/booth/create-booth.dto';
+import { UpdateBoothDto } from '../../../dto/indoor-map/booth/update-booth.dto';
 
 @Injectable()
-export class IndoorMapService {
+export class BoothService {
   constructor(
-    @InjectModel(Map.name)
-    private readonly mapModel: Model<MapDocument>,
     @InjectModel(Booth.name)
     private readonly boothModel: Model<BoothDocument>,
+    private readonly mapService: MapService,
   ) { }
-
-  // ==========================================
-  // MAP MANAGEMENT
-  // ==========================================
-
-  // ==========================================
-  // HELPER FUNCTIONS
-  // ==========================================
 
   /**
    * ตรวจสอบว่าตัวเลขอยู่ในขอบเขตพิกัดลูกโลกจริง (WGS84 Spherical) หรือไม่
-   * Longitude: [-180, 180], Latitude: [-90, 90]
    */
   private isValidGeo(lng?: number, lat?: number): boolean {
     if (lng === undefined || lat === undefined) return false;
@@ -97,7 +86,7 @@ export class IndoorMapService {
   }
 
   /**
-   * จัดรูปแบบการแสดงผล Booth ให้ตรงกับ Object Schema ใหม่ (ตัด hallId และ floorLevel ออก)
+   * จัดรูปแบบการแสดงผล Booth
    */
   private formatBooth(booth: any) {
     let position = booth.position;
@@ -113,18 +102,11 @@ export class IndoorMapService {
       };
     }
 
-    const size = booth.size || { width: 0, depth: 0, height: 0 };
-
-    let footprint = booth.footprint;
-    if (!footprint && position?.coordinates?.length >= 2 && (size.width || size.depth)) {
-      footprint = this.calculateFootprint(
-        position.coordinates[0],
-        position.coordinates[1],
-        size.width ?? 0,
-        size.depth ?? 0,
-        booth.rotation ?? 0,
-      );
-    }
+    const size = booth.size || {
+      width: booth.width ?? 0,
+      depth: booth.depth ?? 0,
+      height: booth.height ?? 0,
+    };
 
     let geo = booth.geo;
     if (Array.isArray(geo) && geo.length >= 2) {
@@ -158,100 +140,24 @@ export class IndoorMapService {
         depth: size.depth ?? 0,
         height: size.height ?? 0,
       },
-      footprint: footprint || null,
-      geo: geo || null,
+      footprint: booth.footprint,
+      geo,
       createdAt: booth.createdAt,
       updatedAt: booth.updatedAt,
     };
   }
 
-  // ==========================================
-  // MAP MANAGEMENT
-  // ==========================================
-
-  async createMap(createMapDto: CreateMapDto): Promise<MapDocument> {
-    const map = new this.mapModel({
-      ...createMapDto,
-      width: createMapDto.width ?? 1000,
-      height: createMapDto.height ?? 1000,
-    });
-
-    try {
-      return await map.save();
-    } catch (error: any) {
-      if (error?.code === 11000) {
-        throw new ConflictException(
-          `แผนที่ "${createMapDto.name}" ชั้น "${createMapDto.floor ?? '-'}" ในอาคาร "${createMapDto.building ?? '-'}" มีอยู่ในระบบแล้ว`,
-        );
-      }
-      throw error;
-    }
-  }
-
-  async findAllMaps(): Promise<MapDocument[]> {
-    return await this.mapModel.find().sort({ createdAt: -1 }).exec();
-  }
-
-  async findMapById(id: string): Promise<MapDocument> {
-    const map = await this.mapModel.findById(id).exec();
-    if (!map) {
-      throw new NotFoundException(`Map with ID "${id}" not found`);
-    }
-    return map;
-  }
-
-  // ==========================================
-  // 2. แสดง แผนที่รวมบูธ (Full Map with Booths)
-  // ==========================================
-
-  async findMapWithBooths(id: string): Promise<{
-    id: string;
-    name: string;
-    building?: string;
-    floor?: string;
-    imageUrl?: string;
-    width: number;
-    height: number;
-    createdAt?: Date;
-    updatedAt?: Date;
-    totalBooths: number;
-    booths: any[];
-  }> {
-    const map = await this.mapModel.findById(id).lean().exec();
-
-    if (!map) {
-      throw new NotFoundException(`Map with ID "${id}" not found`);
-    }
-    delete (map as any).z;
-
-    const booths = await this.boothModel
-      .find({ mapId: id })
-      .lean()
-      .exec();
-
-    const formattedBooths = booths.map((booth) => this.formatBooth(booth));
-
-    return {
-      ...map,
-      id: map._id,
-      totalBooths: formattedBooths.length,
-      booths: formattedBooths,
-    };
-  }
-
-  // ==========================================
-  // 3. BOOTH MANAGEMENT
-  // ==========================================
-
+  /**
+   * 1. สร้างบูธและบันทึกพิกัดตำแหน่ง
+   */
   async createBooth(
     mapId: string,
     createBoothDto: CreateBoothDto,
   ): Promise<any> {
-    // 1. ตรวจสอบว่า map มีอยู่จริง
-    const map = await this.findMapById(mapId);
+    const map = await this.mapService.findMapById(mapId);
     const resolvedMapId = map._id;
 
-    // 2. Position: รองรับทั้ง GeoJSON Object, Array [x, y], และ Flat x, y
+    // Position: รองรับทั้ง GeoJSON Object, Array [x, y], และ Flat x, y
     let position: any = createBoothDto.position;
     if (Array.isArray(position) && position.length >= 2) {
       position = {
@@ -270,16 +176,32 @@ export class IndoorMapService {
       };
     }
 
-    // 3. Size: รองรับทั้ง Object size และ Flat width, depth, height
+    // Size: รองรับทั้ง Object size และ Flat width, depth, height
     const size = {
       width: createBoothDto.size?.width ?? createBoothDto.width ?? 0,
       depth: createBoothDto.size?.depth ?? createBoothDto.depth ?? 0,
       height: createBoothDto.size?.height ?? createBoothDto.height ?? 0,
     };
 
-    // 4. Footprint: คำนวณจาก position และ size อัตโนมัติหากไม่ได้ส่งมา
-    let footprint = createBoothDto.footprint;
-    if (!footprint && (size.width || size.depth)) {
+    // Footprint: บันทึก GeoJSON Polygon ที่ frontend ส่งมา หรือคำนวณอัตโนมัติหากเว้นว่าง
+    let footprint: any = createBoothDto.footprint;
+    if (footprint) {
+      if (Array.isArray(footprint)) {
+        const coords =
+          Array.isArray(footprint[0]) && Array.isArray(footprint[0][0])
+            ? footprint
+            : [footprint];
+        footprint = {
+          type: 'Polygon',
+          coordinates: coords,
+        };
+      } else if (footprint.coordinates) {
+        footprint = {
+          type: 'Polygon',
+          coordinates: footprint.coordinates,
+        };
+      }
+    } else if (size.width || size.depth) {
       footprint = this.calculateFootprint(
         position.coordinates[0],
         position.coordinates[1],
@@ -289,7 +211,7 @@ export class IndoorMapService {
       );
     }
 
-    // 5. Geo: รองรับทั้ง GeoJSON Object, Array [lng, lat], และ Flat longitude, latitude
+    // Geo: รองรับทั้ง GeoJSON Object, Array [lng, lat], และ Flat longitude, latitude
     let geo: any = createBoothDto.geo;
     if (Array.isArray(geo) && geo.length >= 2 && this.isValidGeo(geo[0], geo[1])) {
       geo = {
@@ -335,64 +257,72 @@ export class IndoorMapService {
       }
       throw error;
     }
-    return await this.findBoothById(booth._id);
+
+    return this.formatBooth(booth);
   }
 
+  /**
+   * 2. ดึงรายการบูธทั้งหมดในแผนที่ที่ระบุ
+   */
   async findBoothsByMapId(mapId: string): Promise<any[]> {
-    await this.findMapById(mapId);
+    const map = await this.mapService.findMapById(mapId);
     const booths = await this.boothModel
-      .find({ mapId })
+      .find({ mapId: map._id })
       .sort({ boothNumber: 1 })
-      .lean()
       .exec();
 
     return booths.map((booth) => this.formatBooth(booth));
   }
 
+  /**
+   * 3. ดึงข้อมูลบูธตาม ID
+   */
   async findBoothById(id: string): Promise<any> {
-    const booth = await this.boothModel.findById(id).lean().exec();
+    const booth = await this.boothModel.findById(id).exec();
     if (!booth) {
       throw new NotFoundException(`Booth with ID "${id}" not found`);
     }
     return this.formatBooth(booth);
   }
 
-  async updateBooth(
-    id: string,
-    updateBoothDto: UpdateBoothDto,
-  ): Promise<any> {
+  /**
+   * 4. แก้ไขข้อมูลหรืออัปเดตตำแหน่งบูธ
+   */
+  async updateBooth(id: string, updateBoothDto: UpdateBoothDto): Promise<any> {
     const booth = await this.boothModel.findById(id).exec();
     if (!booth) {
       throw new NotFoundException(`Booth with ID "${id}" not found`);
     }
 
-    if (updateBoothDto.boothNumber !== undefined) booth.boothNumber = updateBoothDto.boothNumber;
-    if (updateBoothDto.name !== undefined) booth.name = updateBoothDto.name;
+    if (updateBoothDto.boothNumber) booth.boothNumber = updateBoothDto.boothNumber;
+    if (updateBoothDto.name) booth.name = updateBoothDto.name;
     if (updateBoothDto.description !== undefined) booth.description = updateBoothDto.description;
     if (updateBoothDto.category !== undefined) booth.category = updateBoothDto.category;
-    if (updateBoothDto.status !== undefined) booth.status = updateBoothDto.status;
+    if (updateBoothDto.status) booth.status = updateBoothDto.status;
     if (updateBoothDto.type !== undefined) booth.type = updateBoothDto.type;
     if (updateBoothDto.rotation !== undefined) booth.rotation = updateBoothDto.rotation;
 
-    // Position: รองรับ Array, GeoJSON Object, และ Flat x, y
+    // Position
+    let newX = updateBoothDto.x;
+    let newY = updateBoothDto.y;
     if (Array.isArray(updateBoothDto.position) && updateBoothDto.position.length >= 2) {
+      newX = Number(updateBoothDto.position[0]);
+      newY = Number(updateBoothDto.position[1]);
+    } else if (updateBoothDto.position?.coordinates && Array.isArray(updateBoothDto.position.coordinates) && updateBoothDto.position.coordinates.length >= 2) {
+      newX = Number(updateBoothDto.position.coordinates[0]);
+      newY = Number(updateBoothDto.position.coordinates[1]);
+    }
+
+    if (newX !== undefined || newY !== undefined) {
+      const currentX = booth.position?.coordinates?.[0] ?? 0;
+      const currentY = booth.position?.coordinates?.[1] ?? 0;
       booth.position = {
         type: 'Point',
-        coordinates: [Number(updateBoothDto.position[0]), Number(updateBoothDto.position[1])],
-      };
-    } else if (updateBoothDto.position?.coordinates) {
-      booth.position = updateBoothDto.position;
-    } else if (updateBoothDto.x !== undefined || updateBoothDto.y !== undefined) {
-      booth.position = {
-        type: 'Point',
-        coordinates: [
-          updateBoothDto.x ?? booth.position?.coordinates?.[0] ?? 0,
-          updateBoothDto.y ?? booth.position?.coordinates?.[1] ?? 0,
-        ],
+        coordinates: [newX ?? currentX, newY ?? currentY],
       };
     }
 
-    // Size: รองรับ Object size และ Flat width, depth, height
+    // Size
     const updatedWidth = updateBoothDto.size?.width ?? updateBoothDto.width;
     const updatedDepth = updateBoothDto.size?.depth ?? updateBoothDto.depth;
     const updatedHeight = updateBoothDto.size?.height ?? updateBoothDto.height;
@@ -407,7 +337,22 @@ export class IndoorMapService {
 
     // Footprint
     if (updateBoothDto.footprint) {
-      booth.footprint = updateBoothDto.footprint;
+      let fp: any = updateBoothDto.footprint;
+      if (Array.isArray(fp)) {
+        const coords =
+          Array.isArray(fp[0]) && Array.isArray(fp[0][0]) ? fp : [fp];
+        booth.footprint = {
+          type: 'Polygon',
+          coordinates: coords,
+        };
+      } else if (fp.coordinates) {
+        booth.footprint = {
+          type: 'Polygon',
+          coordinates: fp.coordinates,
+        };
+      } else {
+        booth.footprint = fp;
+      }
     } else if (
       (updateBoothDto.position || updateBoothDto.size || updateBoothDto.x !== undefined || updateBoothDto.y !== undefined || updateBoothDto.width !== undefined || updateBoothDto.depth !== undefined || updateBoothDto.rotation !== undefined) &&
       booth.position?.coordinates &&
@@ -422,7 +367,7 @@ export class IndoorMapService {
       );
     }
 
-    // Geo: รองรับ Array, GeoJSON Object, และ Flat longitude, latitude
+    // Geo
     if (Array.isArray(updateBoothDto.geo) && updateBoothDto.geo.length >= 2 && this.isValidGeo(updateBoothDto.geo[0], updateBoothDto.geo[1])) {
       booth.geo = {
         type: 'Point',
@@ -450,6 +395,9 @@ export class IndoorMapService {
     return await this.findBoothById(id);
   }
 
+  /**
+   * 5. ลบบูธ
+   */
   async deleteBooth(id: string): Promise<{ success: boolean; message: string }> {
     const booth = await this.boothModel.findById(id).exec();
     if (!booth) {
@@ -459,4 +407,3 @@ export class IndoorMapService {
     return { success: true, message: `Booth ${booth.boothNumber} deleted` };
   }
 }
-
