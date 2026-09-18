@@ -10,17 +10,41 @@ export enum BoothStatus {
   OCCUPIED = 'OCCUPIED',
 }
 
-// GeoJSON Point sub-schema (compatible with MongoDB 2dsphere index)
+// 2D Point sub-schema (GeoJSON Point format [x, y] or [lng, lat])
 @Schema({ _id: false })
-class GeoPoint {
+export class Point2D {
   @Prop({ type: String, enum: ['Point'], default: 'Point' })
   type: string;
 
-  @Prop({ type: [Number] }) // [longitude, latitude]
+  @Prop({ type: [Number], required: true })
   coordinates: number[];
 }
+export const Point2DSchema = SchemaFactory.createForClass(Point2D);
 
-const GeoPointSchema = SchemaFactory.createForClass(GeoPoint);
+// 2D Footprint Polygon sub-schema (GeoJSON Polygon format [[[x, y], ...]])
+@Schema({ _id: false })
+export class Polygon2D {
+  @Prop({ type: String, enum: ['Polygon'], default: 'Polygon' })
+  type: string;
+
+  @Prop({ type: [[[Number]]], required: true })
+  coordinates: number[][][];
+}
+export const Polygon2DSchema = SchemaFactory.createForClass(Polygon2D);
+
+// Object 3D Dimensions sub-schema
+@Schema({ _id: false })
+export class ObjectSize {
+  @Prop({ type: Number, default: 0 })
+  width: number;
+
+  @Prop({ type: Number, default: 0 })
+  depth: number;
+
+  @Prop({ type: Number, default: 0 })
+  height: number;
+}
+export const ObjectSizeSchema = SchemaFactory.createForClass(ObjectSize);
 
 @Schema({
   timestamps: true,
@@ -57,33 +81,43 @@ export class Booth {
   })
   status: BoothStatus;
 
-  // 2D/3D coordinates for canvas/rendering
-  @Prop({ type: Number, default: 0 })
-  x: number;
-
-  @Prop({ type: Number, default: 0 })
-  y: number;
-
-  @Prop({ type: Number, default: 0 })
-  z: number;
-
-  // GeoJSON Point (MongoDB 2dsphere compatible: [lon, lat, altitude] or [x, y, z])
-  @Prop({ type: GeoPointSchema })
-  location?: GeoPoint;
+  // ประเภทของออบเจกต์ (e.g. 'room', 'booth', 'facility', 'restroom')
+  @Prop({ type: String, default: 'room' })
+  type: string;
 
   // Reference to parent Map (UUID string)
   @Prop({ required: true, type: String })
   mapId: string;
+
+  // พิกัดตำแหน่งบนระนาบ 2D ผังอาคาร: GeoJSON Point [x, y]
+  @Prop({ type: Point2DSchema, required: true })
+  position: Point2D;
+
+  // องศาการหมุนของออบเจกต์
+  @Prop({ type: Number, default: 0 })
+  rotation: number;
+
+  // ขนาดมิติ 3D (กว้าง x ลึก x สูง)
+  @Prop({ type: ObjectSizeSchema, default: () => ({ width: 0, depth: 0, height: 0 }) })
+  size: ObjectSize;
+
+  // รูปทรงขอบเขตระนาบ 2D บน Canvas (GeoJSON Polygon)
+  @Prop({ type: Polygon2DSchema })
+  footprint?: Polygon2D;
+
+  // พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])
+  @Prop({ type: Point2DSchema })
+  geo?: Point2D;
 }
 
 export const BoothSchema = SchemaFactory.createForClass(Booth);
 
-// 1. ป้องกันรหัสบูธซ้ำในแผนที่เดียวกัน (ใน map เดียวกัน ห้ามมี boothNumber ซ้ำกันแบบ case-insensitive)
-// และช่วยให้ findBoothsByMapId (.sort({ boothNumber: 1 })) ทำงานได้เร็วที่สุด
+// 1. ป้องกันรหัสบูธซ้ำในแผนที่เดียวกัน
 BoothSchema.index(
   { mapId: 1, boothNumber: 1 },
   { unique: true, collation: { locale: 'en', strength: 2 } },
 );
 
-// 2. Geospatial index (sparse allows booths without spherical coordinates)
-BoothSchema.index({ location: '2dsphere' }, { sparse: true });
+// 2. Geospatial index สำหรับการค้นหาพิกัดโลกจริง (GPS 2dsphere)
+BoothSchema.index({ geo: '2dsphere' }, { sparse: true });
+

@@ -23,12 +23,14 @@
 
 - **ระบบแผนที่และผังอาคาร (Indoor Maps)**:
   - จัดเก็บข้อมูลแปลนอาคาร ขนาดความกว้าง-ยาว (Canvas dimension) และรูปภาพแผนที่
-  - ระบบแปลงระดับชั้นเป็นแกน Z อัตโนมัติ (`parseFloorToZ`) เช่น `"B1"` $\rightarrow$ `-1`, `"G"` $\rightarrow$ `0`, `"M"` $\rightarrow$ `0.5`, `"2"` $\rightarrow$ `2`
   - ป้องกันการสร้างแผนที่ซ้ำในอาคาร-ฮอลล์-ชั้นเดียวกัน (Unique Index แบบ Case-Insensitive)
 - **ระบบบูธและตำแหน่งพิกัด (Booths & Positioning)**:
-  - รองรับพิกัด **Local 3D (x, y, z)** สำหรับการวาดภาพบนเว็บ (2D Canvas / WebGL / Three.js)
-  - รองรับพิกัด **GeoJSON Point (longitude, latitude, altitude)** พร้อม 2dsphere index สำหรับระบบแผนที่ดาวเทียม / GIS
-  - ดึงค่าระดับชั้น $Z$ จากแผนที่หลักมาใช้กับบูธให้อัตโนมัติหากไม่ได้ระบุพิกัดความสูง
+  - จัดเก็บพิกัดแบบ **GeoJSON Point (`position: { type: "Point", coordinates: [x, y] }`)** บนระนาบ 2D สำหรับ Web Canvas / Floor Plan Renderers
+  - **ไม่ต้องเก็บพิกัด Z** แยกรายบูธ โดยกำหนดความสูงผ่านระดับชั้น (`floorLevel` หรือ Floor ของ Map)
+  - รองรับฟิลด์ **`type`** เพื่อระบุประเภทออบเจกต์ (เช่น `room`, `booth`, `facility`, `stage`)
+  - รองรับขนาดมิติ 3 มิติ **`size`** (`width`, `depth`, `height`) และมุมหมุน **`rotation`**
+  - จัดเก็บรูปทรงขอบเขตระนาบ 2D **`footprint`** (GeoJSON Polygon) พร้อมระบบคำนวณ 5 จุดพิกัดอัตโนมัติจากตำแหน่งและขนาด
+  - รองรับพิกัดภูมิศาสตร์โลกจริง **`geo`** (GeoJSON Point `[longitude, latitude]`) พร้อม MongoDB `2dsphere` index สำหรับระบบดาวเทียม / GIS
   - ป้องกันรหัสบูธซ้ำในแผนที่เดียวกัน
 - **Unified Full-Map Payload**:
   - Endpoint รวมผังแผนที่และบูธทั้งหมดในคำสั่งเดียว (`GET /maps/:id/full`) เพื่อให้ Frontend นำไป Render ได้ทันที
@@ -150,7 +152,6 @@ npm run start:dev
 | `imageUrl` | `String` | `null` | ลิงก์ URL รูปภาพแปลนพื้นหลัง |
 | `width` | `Number` | `1000` | ความกว้างของแปลน (pixels หรือ meters) |
 | `height` | `Number` | `1000` | ความยาวของแปลน (pixels หรือ meters) |
-| `z` | `Number` | `0` | ระดับความสูงแกน Z (คำนวณจากชั้นอัตโนมัติ) |
 | `createdAt` | `Date` | Auto | วันเวลาที่สร้าง |
 | `updatedAt` | `Date` | Auto | วันเวลาที่แก้ไขล่าสุด |
 
@@ -164,23 +165,26 @@ npm run start:dev
 | ฟิลด์ | ประเภท | ค่าเริ่มต้น | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | `_id` | `String` (UUID) | Auto UUIDv4 | Primary Key |
-| `mapId` | `String` (UUID) | **จำเป็น** | Foreign Key อ้างอิงถึง `maps._id` |
+| `mapId` | `String` (UUID) | **จำเป็น** | Foreign Key อ้างอิงถึง `maps._id` (ระบุฮอลล์และชั้นผ่าน Map) |
 | `boothNumber` | `String` | **จำเป็น** | รหัสประจำบูธ (เช่น "A01", "B12") |
 | `name` | `String` | **จำเป็น** | ชื่อบูธหรือชื่อผู้จัดแสดง |
 | `description` | `String` | `null` | รายละเอียดบูธ |
 | `category` | `String` | `null` | หมวดหมู่หรือประเภทธุรกิจ |
 | `status` | `Enum` | `AVAILABLE` | สถานะ: `AVAILABLE`, `RESERVED`, `OCCUPIED` |
-| `x` | `Number` | `0` | พิกัดแกน X บนระนาบแผนที่ |
-| `y` | `Number` | `0` | พิกัดแกน Y บนระนาบแผนที่ |
-| `z` | `Number` | `0` | ระดับความสูงแกน Z (ดึงจาก Map ให้อัตโนมัติ) |
-| `location` | `GeoPoint` | `null` | GeoJSON Point `[longitude, latitude, altitude]` |
+| `type` | `String` | `room` | ประเภทของออบเจกต์ (เช่น `room`, `booth`, `facility`) |
+| `position` | `Point2D` | **จำเป็น** | พิกัด 2D บน Canvas แปลนพื้น: `{"type": "Point", "coordinates": [x, y]}` |
+| `rotation` | `Number` | `0` | มุมหมุนของวัตถุ (องศา: 0 - 360) |
+| `size` | `ObjectSize` | `{ width: 0, depth: 0, height: 0 }` | ขนาดมิติ 3D (`width`, `depth`, `height`) |
+| `footprint` | `Polygon2D` | `null` | รูปทรงขอบเขตระนาบ 2D แบบ GeoJSON Polygon (คำนวณอัตโนมัติหากไม่ระบุ) |
+| `geo` | `Point2D` | `null` | พิกัด GPS WGS84 โลกจริง: `{"type": "Point", "coordinates": [lng, lat]}` |
 | `createdAt` | `Date` | Auto | วันเวลาที่สร้าง |
 | `updatedAt` | `Date` | Auto | วันเวลาที่แก้ไขล่าสุด |
 
 **Index พิเศษ**:
 - `{ mapId: 1, boothNumber: 1 }` (Unique, Case-insensitive): รหัสบูธต้องไม่ซ้ำกันในแผนที่เดียวกัน
-- `{ location: "2dsphere" }` (Sparse): รองรับการ Query ตำแหน่งทางภูมิศาสตร์
+- `{ geo: "2dsphere" }` (Sparse): รองรับการ Query ตำแหน่งทางภูมิศาสตร์บนโลกจริง
 
+---
 ---
 
 ## 📡 คู่มือ API (API Reference)
@@ -199,8 +203,7 @@ Base URL: `http://localhost:3000`
     "floor": "1",
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
-    "height": 1080,
-    "z": 1
+    "height": 1080
   }
   ```
 - **Response** (`201 Created`):
@@ -212,7 +215,6 @@ Base URL: `http://localhost:3000`
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
     "height": 1080,
-    "z": 1,
     "id": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
     "createdAt": "2026-09-15T00:00:00.000Z",
     "updatedAt": "2026-09-15T00:00:00.000Z"
@@ -234,7 +236,6 @@ Base URL: `http://localhost:3000`
       "imageUrl": "https://example.com/floorplans/hall1.png",
       "width": 1920,
       "height": 1080,
-      "z": 1,
       "createdAt": "2026-09-15T00:00:00.000Z",
       "updatedAt": "2026-09-15T00:00:00.000Z"
     }
@@ -257,7 +258,6 @@ Base URL: `http://localhost:3000`
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
     "height": 1080,
-    "z": 1,
     "createdAt": "2026-09-15T00:00:00.000Z",
     "updatedAt": "2026-09-15T00:00:00.000Z"
   }
@@ -280,33 +280,43 @@ Base URL: `http://localhost:3000`
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
     "height": 1080,
-    "z": 1,
     "totalBooths": 1,
     "booths": [
       {
-        "id": "b3e6f921-9921-4f47-8178-5db0d68616fa",
-        "mapId": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
+        "id": "bc34c0ad-b624-4ac9-850a-35ca8a830305",
         "boothNumber": "A01",
-        "name": "AI Showcase",
-        "description": "Exhibition on Artificial Intelligence",
-        "category": "Technology",
+        "name": "DeepMind AI Showcase",
+        "description": "Showcasing the latest in AI and robotics technology",
+        "category": "Technology & AI",
         "status": "AVAILABLE",
+        "type": "room",
         "position": {
-          "x": 350.5,
-          "y": 420.0,
-          "z": 1
-        },
-        "spatialLocation": {
           "type": "Point",
-          "coordinates": [100.5489, 13.9113, 1]
+          "coordinates": [120.0, 340.0]
         },
-        "coordinates": {
-          "longitude": 100.5489,
-          "latitude": 13.9113,
-          "altitude": 1
+        "rotation": 0,
+        "size": {
+          "width": 350.5,
+          "depth": 420.0,
+          "height": 300.0
         },
-        "createdAt": "2026-09-15T00:05:00.000Z",
-        "updatedAt": "2026-09-15T00:05:00.000Z"
+        "footprint": {
+          "type": "Polygon",
+          "coordinates": [[
+            [120.0, 340.0],
+            [470.5, 340.0],
+            [470.5, 760.0],
+            [120.0, 760.0],
+            [120.0, 340.0]
+          ]]
+        },
+        "geo": {
+          "type": "Point",
+          "coordinates": [100.5489, 13.9113]
+        },
+        "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
+        "createdAt": "2026-09-18T03:10:46.788Z",
+        "updatedAt": "2026-09-18T03:10:46.788Z"
       }
     ]
   }
@@ -319,49 +329,101 @@ Base URL: `http://localhost:3000`
 #### 2.1 สร้างบูธและบันทึกพิกัดตำแหน่ง (Create Booth)
 - **Method / URL**: `POST /maps/:mapId/booths`
 - **Path Parameters**:
-  - `mapId` (string, required): UUID ของแผนที่ที่ต้องการผูกบูธ
+  - `mapId` (string, required): UUID หรือชื่อฮอลล์ของแผนที่ที่ต้องการผูกบูธไว้
 - **Request Body** (`application/json`):
+  สามารถส่งได้หลายรูปแบบตามความสะดวกของ Frontend:
+
+  **รูปแบบที่ 1: แบบย่อกระชับ (Flat & Simple - แนะนำสำหรับ Frontend)**
   ```json
   {
     "boothNumber": "A01",
-    "name": "AI Showcase",
-    "description": "Exhibition on Artificial Intelligence",
-    "category": "Technology",
+    "name": "DeepMind AI Showcase",
+    "description": "Showcasing the latest in AI and robotics technology",
+    "category": "Technology & AI",
     "status": "AVAILABLE",
-    "x": 350.5,
-    "y": 420.0,
-    "z": 1,
-    "longitude": 100.5489,
-    "latitude": 13.9113,
-    "altitude": 1.0
+    "type": "room",
+    "position": [120.0, 340.0],
+    "width": 350.5,
+    "depth": 420,
+    "height": 300,
+    "rotation": 0,
+    "geo": [100.5489, 13.9113]
+  }
+  ```
+  *(ระบบจะคำนวณ `footprint` Polygon สี่เหลี่ยม 5 จุดพิกัดปิดรอบให้อัตโนมัติจาก position + size และ rotation)*
+
+  **รูปแบบที่ 2: แบบมาตรฐานเต็ม (Full GeoJSON Object)**
+  ```json
+  {
+    "boothNumber": "A01",
+    "name": "DeepMind AI Showcase",
+    "description": "Showcasing the latest in AI and robotics technology",
+    "category": "Technology & AI",
+    "status": "AVAILABLE",
+    "type": "room",
+    "position": {
+      "type": "Point",
+      "coordinates": [120.0, 340.0]
+    },
+    "rotation": 0,
+    "size": {
+      "width": 350.5,
+      "depth": 420,
+      "height": 300
+    },
+    "footprint": {
+      "type": "Polygon",
+      "coordinates": [[
+        [120.0, 340.0],
+        [470.5, 340.0],
+        [470.5, 760.0],
+        [120.0, 760.0],
+        [120.0, 340.0]
+      ]]
+    },
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5489, 13.9113]
+    }
   }
   ```
 - **Response** (`201 Created`):
   ```json
   {
-    "id": "b3e6f921-9921-4f47-8178-5db0d68616fa",
-    "mapId": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
+    "id": "bc34c0ad-b624-4ac9-850a-35ca8a830305",
     "boothNumber": "A01",
-    "name": "AI Showcase",
-    "description": "Exhibition on Artificial Intelligence",
-    "category": "Technology",
+    "name": "DeepMind AI Showcase",
+    "description": "Showcasing the latest in AI and robotics technology",
+    "category": "Technology & AI",
     "status": "AVAILABLE",
+    "type": "room",
+    "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
     "position": {
-      "x": 350.5,
-      "y": 420.0,
-      "z": 1
-    },
-    "spatialLocation": {
       "type": "Point",
-      "coordinates": [100.5489, 13.9113, 1]
+      "coordinates": [120.0, 340.0]
     },
-    "coordinates": {
-      "longitude": 100.5489,
-      "latitude": 13.9113,
-      "altitude": 1
+    "rotation": 0,
+    "size": {
+      "width": 350.5,
+      "depth": 420.0,
+      "height": 300.0
     },
-    "createdAt": "2026-09-15T00:05:00.000Z",
-    "updatedAt": "2026-09-15T00:05:00.000Z"
+    "footprint": {
+      "type": "Polygon",
+      "coordinates": [[
+        [120.0, 340.0],
+        [470.5, 340.0],
+        [470.5, 760.0],
+        [120.0, 760.0],
+        [120.0, 340.0]
+      ]]
+    },
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5489, 13.9113]
+    },
+    "createdAt": "2026-09-18T03:10:46.788Z",
+    "updatedAt": "2026-09-18T03:10:46.788Z"
   }
   ```
 
@@ -375,21 +437,40 @@ Base URL: `http://localhost:3000`
   ```json
   [
     {
-      "id": "b3e6f921-9921-4f47-8178-5db0d68616fa",
-      "mapId": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
+      "id": "bc34c0ad-b624-4ac9-850a-35ca8a830305",
       "boothNumber": "A01",
-      "name": "AI Showcase",
+      "name": "DeepMind AI Showcase",
+      "description": "Showcasing the latest in AI and robotics technology",
+      "category": "Technology & AI",
       "status": "AVAILABLE",
+      "type": "room",
+      "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
       "position": {
-        "x": 350.5,
-        "y": 420.0,
-        "z": 1
+        "type": "Point",
+        "coordinates": [120.0, 340.0]
       },
-      "coordinates": {
-        "longitude": 100.5489,
-        "latitude": 13.9113,
-        "altitude": 1
-      }
+      "rotation": 0,
+      "size": {
+        "width": 350.5,
+        "depth": 420.0,
+        "height": 300.0
+      },
+      "footprint": {
+        "type": "Polygon",
+        "coordinates": [[
+          [120.0, 340.0],
+          [470.5, 340.0],
+          [470.5, 760.0],
+          [120.0, 760.0],
+          [120.0, 340.0]
+        ]]
+      },
+      "geo": {
+        "type": "Point",
+        "coordinates": [100.5489, 13.9113]
+      },
+      "createdAt": "2026-09-18T03:10:46.788Z",
+      "updatedAt": "2026-09-18T03:10:46.788Z"
     }
   ]
   ```
@@ -403,27 +484,40 @@ Base URL: `http://localhost:3000`
 - **Response** (`200 OK`):
   ```json
   {
-    "id": "b3e6f921-9921-4f47-8178-5db0d68616fa",
-    "mapId": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
+    "id": "bc34c0ad-b624-4ac9-850a-35ca8a830305",
     "boothNumber": "A01",
-    "name": "AI Showcase",
-    "description": "Exhibition on Artificial Intelligence",
-    "category": "Technology",
+    "name": "DeepMind AI Showcase",
+    "description": "Showcasing the latest in AI and robotics technology",
+    "category": "Technology & AI",
     "status": "AVAILABLE",
+    "type": "room",
+    "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
     "position": {
-      "x": 350.5,
-      "y": 420.0,
-      "z": 1
-    },
-    "spatialLocation": {
       "type": "Point",
-      "coordinates": [100.5489, 13.9113, 1]
+      "coordinates": [120.0, 340.0]
     },
-    "coordinates": {
-      "longitude": 100.5489,
-      "latitude": 13.9113,
-      "altitude": 1
-    }
+    "rotation": 0,
+    "size": {
+      "width": 350.5,
+      "depth": 420.0,
+      "height": 300.0
+    },
+    "footprint": {
+      "type": "Polygon",
+      "coordinates": [[
+        [120.0, 340.0],
+        [470.5, 340.0],
+        [470.5, 760.0],
+        [120.0, 760.0],
+        [120.0, 340.0]
+      ]]
+    },
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5489, 13.9113]
+    },
+    "createdAt": "2026-09-18T03:10:46.788Z",
+    "updatedAt": "2026-09-18T03:10:46.788Z"
   }
   ```
 
@@ -438,11 +532,15 @@ Base URL: `http://localhost:3000`
   {
     "name": "Google DeepMind Showcase",
     "status": "OCCUPIED",
-    "x": 400.0,
-    "y": 450.0
+    "position": {
+      "type": "Point",
+      "coordinates": [150.0, 380.0]
+    },
+    "rotation": 45
   }
   ```
 - **Response** (`200 OK`): ข้อมูลบูธฉบับอัปเดตล่าสุด
+
 
 ---
 

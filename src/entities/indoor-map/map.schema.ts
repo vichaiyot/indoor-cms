@@ -12,6 +12,7 @@ export type MapDocument = Map & Document;
       ret.id = ret._id;
       delete ret._id;
       delete ret.__v;
+      delete ret.z;
       return ret;
     },
   },
@@ -37,9 +38,6 @@ export class Map {
 
   @Prop({ type: Number, default: 1000 })
   height: number;
-
-  @Prop({ type: Number, default: 0 })
-  z?: number;
 }
 
 export const MapSchema = SchemaFactory.createForClass(Map);
@@ -53,6 +51,5 @@ MapSchema.index(
 // 2. Query แผนที่ล่าสุดเร็วขึ้น (CMS listing: sort by createdAt DESC)
 MapSchema.index({ createdAt: -1 });
 
-// 3. กรองแผนที่ตามอาคารและชั้น หรือระดับความสูง Z
+// 3. กรองแผนที่ตามอาคารและชั้น
 MapSchema.index({ building: 1, floor: 1 });
-MapSchema.index({ building: 1, z: 1 });

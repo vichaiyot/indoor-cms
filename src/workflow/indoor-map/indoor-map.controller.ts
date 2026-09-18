@@ -14,7 +14,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
-  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { IndoorMapService } from './indoor-map.service';
 import { CreateMapDto } from '../../dto/indoor-map/create-map.dto';
@@ -27,7 +26,7 @@ export class IndoorMapController {
   constructor(private readonly indoorMapService: IndoorMapService) { }
 
   // ==========================================
-  // 1. สร้าง แผนที่หลัก
+  // 1. แผนที่หลัก (Maps)
   // ==========================================
   @Post('maps')
   @ApiOperation({
@@ -57,12 +56,12 @@ export class IndoorMapController {
   }
 
   // ==========================================
-  // 3. แสดง แผนที่รวมบูธ (Full Map with Booths)
+  // 2. แสดงแผนที่รวมบูธ (Full Map with Booths)
   // ==========================================
   @Get('maps/:id/full')
   @ApiOperation({
     summary: 'แสดงแผนที่รวมบูธทั้งหมด (Get Map with all Booths & Positions)',
-    description: 'ดึงข้อมูลแผนที่หลักพร้อมรายการบูธทั้งหมดและพิกัดตำแหน่ง (ทั้ง 2D/3D Canvas x,y,z และ Spatial coordinates)',
+    description: 'ดึงข้อมูลแผนที่หลักพร้อมรายการบูธทั้งหมดและพิกัดตำแหน่ง Point [x, y], ขนาด (size), footprint polygon และพิกัดภูมิศาสตร์ geo [lng, lat]',
   })
   @ApiParam({ name: 'id', description: 'Map UUID' })
   findMapWithBooths(@Param('id') id: string) {
@@ -70,12 +69,12 @@ export class IndoorMapController {
   }
 
   // ==========================================
-  // 2. สร้าง บูธเก็บข้อมูลของบูธเก็บตำแหน่ง
+  // 3. บูธและตำแหน่งพิกัด (Booths)
   // ==========================================
   @Post('maps/:mapId/booths')
   @ApiOperation({
-    summary: 'สร้างบูธและเก็บข้อมูลพร้อมตำแหน่ง (Create Booth with Position)',
-    description: 'บันทึกข้อมูลบูธ (รหัสบูธ, ชื่อ, สถานะ) พร้อมพิกัดตำแหน่ง x, y, z และ GeoJSON 3D Point (longitude, latitude, altitude)',
+    summary: 'สร้างบูธและเก็บข้อมูลพร้อมตำแหน่ง (Create Booth with Point Position)',
+    description: 'บันทึกข้อมูลบูธพร้อมพิกัดตำแหน่ง Point [x, y], ขนาดมิติ 3D (size), footprint polygon, type และพิกัดภูมิศาสตร์ geo [lng, lat]',
   })
   @ApiParam({ name: 'mapId', description: 'Map UUID ที่ต้องการผูกบูธไว้' })
   @ApiResponse({ status: 201, description: 'สร้างบูธและบันทึกพิกัดสำเร็จ' })
@@ -90,7 +89,7 @@ export class IndoorMapController {
   @ApiOperation({
     summary: 'ดึงรายการบูธทั้งหมดในแผนที่ที่ระบุ',
   })
-  @ApiParam({ name: 'mapId', description: 'Map UUID' })
+  @ApiParam({ name: 'mapId', description: 'Map UUID หรือชื่อ Hall' })
   findBoothsByMapId(@Param('mapId') mapId: string) {
     return this.indoorMapService.findBoothsByMapId(mapId);
   }

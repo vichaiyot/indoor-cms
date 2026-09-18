@@ -51,13 +51,4 @@ export class CreateMapDto {
   @IsNumber()
   @IsOptional()
   height?: number;
-
-  @ApiPropertyOptional({
-    example: 1,
-    description:
-      'Z-axis elevation or floor height level (optional: automatically derived from floor if omitted)',
-  })
-  @IsNumber()
-  @IsOptional()
-  z?: number;
 }

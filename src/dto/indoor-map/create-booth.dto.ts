@@ -1,12 +1,91 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, ApiHideProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
 import { BoothStatus } from '../../entities/indoor-map/booth.schema';
+
+export class PointDto {
+  @ApiProperty({
+    example: 'Point',
+    enum: ['Point'],
+    default: 'Point',
+    description: 'GeoJSON geometry type',
+  })
+  @IsString()
+  type: string = 'Point';
+
+  @ApiProperty({
+    example: [120.0, 340.0],
+    description: '2D coordinates array: [x, y] on floor plan canvas or [longitude, latitude] for GPS',
+    type: [Number],
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(2)
+  @IsNumber({}, { each: true })
+  coordinates: number[];
+}
+
+export class PolygonDto {
+  @ApiProperty({
+    example: 'Polygon',
+    enum: ['Polygon'],
+    default: 'Polygon',
+    description: 'GeoJSON geometry type',
+  })
+  @IsString()
+  type: string = 'Polygon';
+
+  @ApiProperty({
+    example: [
+      [
+        [120.0, 340.0],
+        [470.5, 340.0],
+        [470.5, 760.0],
+        [120.0, 760.0],
+        [120.0, 340.0],
+      ],
+    ],
+    description: 'GeoJSON Polygon coordinates: array of linear ring coordinate arrays',
+  })
+  @IsArray()
+  coordinates: number[][][];
+}
+
+export class SizeDto {
+  @ApiPropertyOptional({
+    example: 350.5,
+    description: 'Width of the object (e.g. in cm or canvas units)',
+  })
+  @IsNumber()
+  @IsOptional()
+  width?: number;
+
+  @ApiPropertyOptional({
+    example: 420.0,
+    description: 'Depth / Length of the object (e.g. in cm or canvas units)',
+  })
+  @IsNumber()
+  @IsOptional()
+  depth?: number;
+
+  @ApiPropertyOptional({
+    example: 300.0,
+    description: 'Height of the object (e.g. in cm or canvas units)',
+  })
+  @IsNumber()
+  @IsOptional()
+  height?: number;
+}
 
 export class CreateBoothDto {
   @ApiProperty({
@@ -51,54 +130,119 @@ export class CreateBoothDto {
   status?: BoothStatus;
 
   @ApiPropertyOptional({
-    example: 350.5,
-    description: 'X position coordinate on the floor plan canvas',
-    default: 0,
+    example: 'room',
+    default: 'room',
+    description: 'Type of object (e.g. room, booth, facility, stage)',
   })
+  @IsString()
+  @IsOptional()
+  type?: string;
+
+  @ApiPropertyOptional({
+    type: PointDto,
+    description: '2D Position Point [x, y] on the floor plan canvas',
+    example: {
+      type: 'Point',
+      coordinates: [120.0, 340.0],
+    },
+  })
+  @IsOptional()
+  position?: any;
+
+  @ApiPropertyOptional({
+    example: 0,
+    default: 0,
+    description: 'Rotation angle in degrees (0 - 360)',
+  })
+  @IsNumber()
+  @IsOptional()
+  rotation?: number;
+
+  @ApiPropertyOptional({
+    type: SizeDto,
+    description: 'Object 3D dimensions (width, depth, height)',
+    example: {
+      width: 350.5,
+      depth: 420.0,
+      height: 300.0,
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SizeDto)
+  size?: SizeDto;
+
+  @ApiPropertyOptional({
+    type: PolygonDto,
+    description:
+      '2D Footprint polygon coordinates on canvas (automatically calculated from position & size if omitted)',
+    example: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [120.0, 340.0],
+          [470.5, 340.0],
+          [470.5, 760.0],
+          [120.0, 760.0],
+          [120.0, 340.0],
+        ],
+      ],
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PolygonDto)
+  footprint?: PolygonDto;
+
+  @ApiPropertyOptional({
+    type: PointDto,
+    description: 'Real-world GPS coordinates: GeoJSON Point [longitude, latitude]',
+    example: {
+      type: 'Point',
+      coordinates: [100.5489, 13.9113],
+    },
+  })
+  @IsOptional()
+  geo?: any;
+
+  // ============================================================
+  // Flat / backward-compatibility fields (hidden from Swagger to keep docs clean)
+  // ============================================================
+  @ApiHideProperty()
+  @IsNumber()
+  @IsOptional()
+  width?: number;
+
+  @ApiHideProperty()
+  @IsNumber()
+  @IsOptional()
+  depth?: number;
+
+  @ApiHideProperty()
+  @IsNumber()
+  @IsOptional()
+  height?: number;
+
+  @ApiHideProperty()
   @IsNumber()
   @IsOptional()
   x?: number;
 
-  @ApiPropertyOptional({
-    example: 420.0,
-    description: 'Y position coordinate on the floor plan canvas',
-    default: 0,
-  })
+  @ApiHideProperty()
   @IsNumber()
   @IsOptional()
   y?: number;
 
-  @ApiPropertyOptional({
-    example: 1,
-    description:
-      'Z position coordinate / height / floor elevation (optional: automatically determined by the floor of the map if omitted)',
-  })
-  @IsNumber()
-  @IsOptional()
-  z?: number;
-
-  @ApiPropertyOptional({
-    example: 100.5489,
-    description: 'GPS Longitude for spatial coordinates (optional)',
-  })
+  @ApiHideProperty()
   @IsNumber()
   @IsOptional()
   longitude?: number;
 
-  @ApiPropertyOptional({
-    example: 13.9113,
-    description: 'GPS Latitude for spatial coordinates (optional)',
-  })
+  @ApiHideProperty()
   @IsNumber()
   @IsOptional()
   latitude?: number;
-
-  @ApiPropertyOptional({
-    example: 10.0,
-    description:
-      'GPS Altitude / Elevation (Z) for 3D spatial coordinates (optional: defaults to z or floor level)',
-  })
-  @IsNumber()
-  @IsOptional()
-  altitude?: number;
 }
+
+
+
