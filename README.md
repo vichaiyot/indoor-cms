@@ -650,7 +650,42 @@ Base URL: `http://localhost:3000`
 
 ---
 
-#### 3.2 ดึงโครงข่ายเส้นทางเดินของแผนที่ (Get Path Graph for A* Calculation)
+#### 3.2 อัปเดตโครงข่ายเส้นทางเดินบางส่วน (Partial Update / Safe PATCH)
+- **Method / URL**: `PATCH /maps/:mapId/paths`
+- **คำอธิบาย**: แก้ไขโครงข่ายเส้นทางเดินเฉพาะจุด เช่น ย้ายพิกัด Node, ลบจุด, เพิ่มจุด หรือลบเส้นเชื่อม โดยระบบจะรักษา **Data Integrity** ให้อัตโนมัติ:
+  - **`moveNodes`**: ย้ายพิกัด x, y ของจุด และ **คำนวณระยะทาง weight ของ Edges ที่เชื่อมต่ออยู่ใหม่ให้อัตโนมัติทันที**
+  - **`deleteNodeIds`**: ลบจุด พร้อม **Cascade ลบ Edges ที่เชื่อมต่ออยู่ทั้งหมด** ป้องกันเส้นทางขาดหรือลอย (Dangling edges)
+  - **`addNodes` / `addEdges`**: เพิ่มจุดหรือเส้นเชื่อมโยงใหม่ พร้อม Validation ป้องกัน Self-loop และ Duplicate
+  - **`deleteEdges`**: ลบเส้นเชื่อมโยงเฉพาะเส้น
+- **Request Body** (`application/json`):
+  ```json
+  {
+    "moveNodes": [
+      { "id": "n1", "x": 100.0, "y": 150.0 }
+    ],
+    "deleteNodeIds": ["n3"],
+    "addEdges": [
+      { "from": "n1", "to": "n2", "bidirectional": true }
+    ]
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "id": "63724ece-dc31-4085-95d5-b7b3b14dbca9",
+    "mapId": "1f17f7c7-f2c1-43f3-9768-2c4050c67873",
+    "totalNodes": 2,
+    "totalEdges": 1,
+    "isolatedNodesCount": 0,
+    "isolatedNodeIds": [],
+    "nodes": [...],
+    "edges": [...]
+  }
+  ```
+
+---
+
+#### 3.3 ดึงโครงข่ายเส้นทางเดินของแผนที่ (Get Path Graph for A* Calculation)
 - **Method / URL**: `GET /maps/:mapId/paths`
 - **Path Parameters**:
   - `mapId` (string, required): UUID ของแผนที่
