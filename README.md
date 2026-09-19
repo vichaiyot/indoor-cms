@@ -171,12 +171,17 @@ npm run start:dev
 | `imageUrl` | `String` | `null` | ลิงก์ URL รูปภาพแปลนพื้นหลัง |
 | `width` | `Number` | `1000` | ความกว้างของแปลน (pixels หรือ meters) |
 | `height` | `Number` | `1000` | ความยาวของแปลน (pixels หรือ meters) |
+| `geo` | `Point2D` | `null` | พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point `[longitude, latitude]`) |
+| `boundary` | `Polygon2D` | `null` | ขอบเขตอาณาเขตผังอาคารบนแผนที่โลกจริง (GeoJSON Polygon `[[[lng, lat], ...]]`) |
+| `rotation` | `Number` | `0` | องศาการหมุนของแผนที่เทียบกับทิศเหนือ (0 - 360 องศา) |
 | `createdAt` | `Date` | Auto | วันเวลาที่สร้าง |
 | `updatedAt` | `Date` | Auto | วันเวลาที่แก้ไขล่าสุด |
 
 **Index พิเศษ**:
 - `{ building: 1, name: 1, floor: 1 }` (Unique, Case-insensitive): ป้องกันการสร้างแผนที่ซ้ำ
 - `{ createdAt: -1 }`: ดึงข้อมูลล่าสุดได้รวดเร็ว
+- `{ building: 1, floor: 1 }`: กรองแผนที่ตามอาคารและชั้น
+- `{ geo: '2dsphere' }` (Sparse): พิกัดภูมิศาสตร์โลกจริงสำหรับการวาดและค้นหาเชิงพื้นที่บนแผนที่โลกจริง (GIS)
 
 ---
 
@@ -222,7 +227,24 @@ Base URL: `http://localhost:3000`
     "floor": "1",
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
-    "height": 1080
+    "height": 1080,
+    "rotation": 45.5,
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5489, 13.9113]
+    },
+    "boundary": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [100.5480, 13.9110],
+          [100.5500, 13.9110],
+          [100.5500, 13.9125],
+          [100.5480, 13.9125],
+          [100.5480, 13.9110]
+        ]
+      ]
+    }
   }
   ```
 - **Response** (`201 Created`):
@@ -234,6 +256,23 @@ Base URL: `http://localhost:3000`
     "imageUrl": "https://example.com/floorplans/hall1.png",
     "width": 1920,
     "height": 1080,
+    "rotation": 45.5,
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5489, 13.9113]
+    },
+    "boundary": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [100.5480, 13.9110],
+          [100.5500, 13.9110],
+          [100.5500, 13.9125],
+          [100.5480, 13.9125],
+          [100.5480, 13.9110]
+        ]
+      ]
+    },
     "id": "e4a2d80d-8df5-430c-99a3-5c0211739f4d",
     "createdAt": "2026-09-15T00:00:00.000Z",
     "updatedAt": "2026-09-15T00:00:00.000Z"
@@ -294,7 +333,12 @@ Base URL: `http://localhost:3000`
   {
     "name": "Challenger Hall 1 (Renovated)",
     "width": 2000,
-    "imageUrl": "https://example.com/floorplans/hall1-v2.png"
+    "imageUrl": "https://example.com/floorplans/hall1-v2.png",
+    "rotation": 90,
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.5500, 13.9120]
+    }
   }
   ```
 - **Response** (`200 OK`):
@@ -307,6 +351,11 @@ Base URL: `http://localhost:3000`
     "imageUrl": "https://example.com/floorplans/hall1-v2.png",
     "width": 2000,
     "height": 1080,
+    "rotation": 90,
+    "geo": {
+      "type": "Point",
+      "coordinates": [100.55, 13.912]
+    },
     "createdAt": "2026-09-15T00:00:00.000Z",
     "updatedAt": "2026-09-18T07:30:12.570Z"
   }

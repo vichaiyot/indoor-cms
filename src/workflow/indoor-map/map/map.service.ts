@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -23,9 +24,26 @@ export class MapService {
   ) { }
 
   /**
+   * ตรวจสอบว่าพิกัดภูมิศาสตร์โลกจริงอยู่ในขอบเขต WGS84 หรือไม่
+   */
+  private isValidGeo(lng?: number, lat?: number): boolean {
+    if (lng === undefined || lat === undefined) return false;
+    return lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
+  }
+
+  /**
    * 1. สร้างแผนที่หลัก (Floor Plan / Hall Map)
    */
   async createMap(createMapDto: CreateMapDto): Promise<Map> {
+    if (createMapDto.geo?.coordinates) {
+      const [lng, lat] = createMapDto.geo.coordinates;
+      if (!this.isValidGeo(lng, lat)) {
+        throw new BadRequestException(
+          'พิกัดภูมิศาสตร์ (geo) ไม่ถูกต้อง: Longitude ต้องอยู่ระหว่าง -180 ถึง 180 และ Latitude ต้องอยู่ระหว่าง -90 ถึง 90',
+        );
+      }
+    }
+
     try {
       const createdMap = new this.mapModel(createMapDto);
       return await createdMap.save();
@@ -75,6 +93,15 @@ export class MapService {
   async updateMap(id: string, updateMapDto: UpdateMapDto): Promise<Map> {
     const map = await this.findMapById(id);
 
+    if (updateMapDto.geo?.coordinates) {
+      const [lng, lat] = updateMapDto.geo.coordinates;
+      if (!this.isValidGeo(lng, lat)) {
+        throw new BadRequestException(
+          'พิกัดภูมิศาสตร์ (geo) ไม่ถูกต้อง: Longitude ต้องอยู่ระหว่าง -180 ถึง 180 และ Latitude ต้องอยู่ระหว่าง -90 ถึง 90',
+        );
+      }
+    }
+
     try {
       Object.assign(map, updateMapDto);
       return await map.save();
@@ -99,6 +126,9 @@ export class MapService {
     imageUrl?: string;
     width: number;
     height: number;
+    geo?: any;
+    boundary?: any;
+    rotation?: number;
     createdAt?: Date;
     updatedAt?: Date;
     totalBooths: number;

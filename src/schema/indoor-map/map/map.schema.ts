@@ -1,6 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  Point2D,
+  Point2DSchema,
+  Polygon2D,
+  Polygon2DSchema,
+} from '../booth/booth.schema';
 
 export type MapDocument = Map & Document;
 
@@ -38,6 +44,18 @@ export class Map {
 
   @Prop({ type: Number, default: 1000 })
   height: number;
+
+  // พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])
+  @Prop({ type: Point2DSchema })
+  geo?: Point2D;
+
+  // ขอบเขตอาณาเขตผังอาคารบนแผนที่โลกจริง (GeoJSON Polygon [[[lng, lat], ...]])
+  @Prop({ type: Polygon2DSchema })
+  boundary?: Polygon2D;
+
+  // องศาการหมุนของแผนที่เทียบกับทิศเหนือ (0 - 360 องศา)
+  @Prop({ type: Number, default: 0 })
+  rotation?: number;
 }
 
 export const MapSchema = SchemaFactory.createForClass(Map);
@@ -53,3 +71,6 @@ MapSchema.index({ createdAt: -1 });
 
 // 3. กรองแผนที่ตามอาคารและชั้น
 MapSchema.index({ building: 1, floor: 1 });
+
+// 4. พิกัดภูมิศาสตร์โลกจริง (2dsphere index) สำหรับการวาดและค้นหาเชิงพื้นที่บนแผนที่โลกจริง
+MapSchema.index({ geo: '2dsphere' }, { sparse: true });

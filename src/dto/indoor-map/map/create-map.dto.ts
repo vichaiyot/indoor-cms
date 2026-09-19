@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { PointDto, PolygonDto } from '../booth/create-booth.dto';
 
 export class CreateMapDto {
   @ApiProperty({
@@ -51,4 +59,48 @@ export class CreateMapDto {
   @IsNumber()
   @IsOptional()
   height?: number;
+
+  @ApiPropertyOptional({
+    type: PointDto,
+    description: 'พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])',
+    example: {
+      type: 'Point',
+      coordinates: [100.5489, 13.9113],
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PointDto)
+  geo?: PointDto;
+
+  @ApiPropertyOptional({
+    type: PolygonDto,
+    description: 'ขอบเขตอาณาเขตผังอาคารบนแผนที่โลกจริง (GeoJSON Polygon [[[longitude, latitude], ...]])',
+    example: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [100.548, 13.911],
+          [100.55, 13.911],
+          [100.55, 13.9125],
+          [100.548, 13.9125],
+          [100.548, 13.911],
+        ],
+      ],
+    },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PolygonDto)
+  boundary?: PolygonDto;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: 'องศาการหมุนของแผนที่เทียบกับทิศเหนือ (0 - 360 องศา)',
+    default: 0,
+  })
+  @IsNumber()
+  @IsOptional()
+  rotation?: number;
 }
+
