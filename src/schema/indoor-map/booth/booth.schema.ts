@@ -10,6 +10,13 @@ export enum BoothStatus {
   OCCUPIED = 'OCCUPIED',
 }
 
+export enum BoothShapeType {
+  RECTANGLE = 'rectangle',
+  CIRCLE = 'circle',
+  HEXAGON = 'hexagon',
+  CUSTOM = 'custom',
+}
+
 // 2D Point sub-schema (GeoJSON Point format [x, y] or [lng, lat])
 @Schema({ _id: false })
 export class Point2D {
@@ -98,16 +105,35 @@ export class Booth {
   rotation: number;
 
   // ขนาดมิติ 3D (กว้าง x ลึก x สูง)
-  @Prop({ type: ObjectSizeSchema, default: () => ({ width: 0, depth: 0, height: 0 }) })
+  @Prop({
+    type: ObjectSizeSchema,
+    default: () => ({ width: 0, depth: 0, height: 0 }),
+  })
   size: ObjectSize;
 
   // รูปทรงขอบเขตระนาบ 2D บน Canvas (GeoJSON Polygon)
   @Prop({ type: Polygon2DSchema })
   footprint?: Polygon2D;
 
+  // ประเภทรูปทรงเรขาคณิต (rectangle, circle, hexagon, custom)
+  @Prop({
+    type: String,
+    enum: BoothShapeType,
+    default: BoothShapeType.RECTANGLE,
+  })
+  shapeType?: BoothShapeType;
+
+  // รัศมีสำหรับรูปทรงกลม หรือรูปทรงหลายเหลี่ยมด้านเท่า (circle, hexagon)
+  @Prop({ type: Number })
+  radius?: number;
+
   // พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])
   @Prop({ type: Point2DSchema })
   geo?: Point2D;
+
+  // รหัสโหนดทางเข้าสำหรับระบบนำทาง (Waypoint/Node ID) - ใช้สำหรับ findRoute ใน Frontend
+  @Prop({ type: String })
+  entryNodeId?: string;
 }
 
 export const BoothSchema = SchemaFactory.createForClass(Booth);

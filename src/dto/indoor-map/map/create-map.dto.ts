@@ -62,7 +62,8 @@ export class CreateMapDto {
 
   @ApiPropertyOptional({
     type: PointDto,
-    description: 'พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])',
+    description:
+      'พิกัดภูมิศาสตร์โลกจริง (GPS WGS84 GeoJSON Point [longitude, latitude])',
     example: {
       type: 'Point',
       coordinates: [100.5489, 13.9113],
@@ -75,7 +76,8 @@ export class CreateMapDto {
 
   @ApiPropertyOptional({
     type: PolygonDto,
-    description: 'ขอบเขตอาณาเขตผังอาคารบนแผนที่โลกจริง (GeoJSON Polygon [[[longitude, latitude], ...]])',
+    description:
+      'ขอบเขตอาณาเขตผังอาคารบนแผนที่โลกจริง (GeoJSON Polygon [[[longitude, latitude], ...]])',
     example: {
       type: 'Polygon',
       coordinates: [
@@ -103,4 +105,3 @@ export class CreateMapDto {
   @IsOptional()
   rotation?: number;
 }
-

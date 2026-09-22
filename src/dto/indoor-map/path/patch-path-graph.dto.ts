@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, ApiHideProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -52,13 +52,14 @@ export class PatchPathGraphDto {
 
   @ApiPropertyOptional({
     type: [PathNodeDto],
-    description: 'เพิ่มหรืออัปเดต Node ใหม่เข้าสู่โครงข่าย',
+    description: 'เพิ่มหรืออัปเดต Node ใหม่เข้าสู่โครงข่าย (ระบุ connectedNodeIds)',
     example: [
       {
         id: 'n4',
         name: 'บันไดเลื่อนชั้น 1',
         type: 'stairs',
         position: { type: 'Point', coordinates: [300, 450] },
+        connectedNodeIds: ['n2'],
       },
     ],
   })
@@ -79,22 +80,15 @@ export class PatchPathGraphDto {
   @IsString({ each: true })
   deleteNodeIds?: string[];
 
-  @ApiPropertyOptional({
-    type: [PathEdgeDto],
-    description: 'เพิ่มเส้นเชื่อมโยงทางเดินใหม่ระหว่างจุด',
-    example: [{ from: 'n1', to: 'n3', bidirectional: true }],
-  })
+  // ซ่อน edges จาก Swagger Body Example ตามที่ร้องขอ เพื่อให้แสดงเฉพาะ node operations
+  @ApiHideProperty()
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PathEdgeDto)
   addEdges?: PathEdgeDto[];
 
-  @ApiPropertyOptional({
-    type: [DeleteEdgeDto],
-    description: 'ลบเส้นทางเชื่อมโยงระหว่างจุดออกจากโครงข่าย',
-    example: [{ from: 'n1', to: 'n2' }],
-  })
+  @ApiHideProperty()
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

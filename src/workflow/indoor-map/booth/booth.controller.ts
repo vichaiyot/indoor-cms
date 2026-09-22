@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { BoothService } from './booth.service';
 import { CreateBoothDto } from '../../../dto/indoor-map/booth/create-booth.dto';
@@ -22,18 +23,40 @@ import { UpdateBoothDto } from '../../../dto/indoor-map/booth/update-booth.dto';
 @ApiTags('Booths')
 @Controller()
 export class BoothController {
-  constructor(private readonly boothService: BoothService) { }
+  constructor(private readonly boothService: BoothService) {}
 
   // ==========================================
   // บูธและตำแหน่งพิกัด (Booths)
   // ==========================================
   @Post('maps/:mapId/booths')
   @ApiOperation({
-    summary: 'สร้างบูธและเก็บข้อมูลพร้อมตำแหน่ง (Create Booth with Point Position)',
+    summary:
+      'สร้างบูธและเก็บข้อมูลพร้อมตำแหน่ง (Create Booth with Point Position)',
     description:
-      'บันทึกข้อมูลบูธพร้อมพิกัดตำแหน่ง Point [x, y], ขนาดมิติ 3D (size), footprint polygon, type และพิกัดภูมิศาสตร์ geo [lng, lat]',
+      'บันทึกข้อมูลบูธพร้อมพิกัดตำแหน่ง Point [x, y], ขนาดมิติ 3D (size), footprint polygon, type และพิกัดภูมิศาสตร์ geo [lng, lat] รวมถึงรหัสโหนดทางเข้าสำหรับนำทาง (entryNodeId)',
   })
   @ApiParam({ name: 'mapId', description: 'Map UUID ที่ต้องการผูกบูธไว้' })
+  @ApiBody({
+    type: CreateBoothDto,
+    description: 'ข้อมูลบูธ พร้อมพิกัดตำแหน่ง และรหัสโหนดทางเข้าสำหรับนำทาง (entryNodeId)',
+    examples: {
+      standardBooth: {
+        summary: 'ตัวอย่างบูธมาตรฐาน (พร้อมผูก entryNodeId นำทาง)',
+        value: {
+          boothNumber: 'A01',
+          name: 'บูธเทคโนโลยีปัญญาประดิษฐ์ A01',
+          description: 'จัดแสดงผลงานนวัตกรรม AI และ Machine Learning',
+          category: 'Technology',
+          status: 'AVAILABLE',
+          type: 'booth',
+          position: { type: 'Point', coordinates: [120.0, 340.0] },
+          size: { width: 300, depth: 300, height: 250 },
+          rotation: 0,
+          entryNodeId: 'n3',
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 201, description: 'สร้างบูธและบันทึกพิกัดสำเร็จ' })
   createBooth(
     @Param('mapId') mapId: string,
@@ -65,10 +88,21 @@ export class BoothController {
     summary: 'แก้ไขข้อมูลหรือขยับตำแหน่งบูธ (Update Booth Info or Coordinates)',
   })
   @ApiParam({ name: 'id', description: 'Booth UUID' })
-  updateBooth(
-    @Param('id') id: string,
-    @Body() updateBoothDto: UpdateBoothDto,
-  ) {
+  @ApiBody({
+    type: UpdateBoothDto,
+    description: 'อัปเดตข้อมูลบูธ ขยับพิกัด หรือเปลี่ยน entryNodeId',
+    examples: {
+      updateExample: {
+        summary: 'ตัวอย่างการอัปเดตบูธ',
+        value: {
+          name: 'บูธปรับปรุงใหม่ A01',
+          status: 'RESERVED',
+          entryNodeId: 'n3',
+        },
+      },
+    },
+  })
+  updateBooth(@Param('id') id: string, @Body() updateBoothDto: UpdateBoothDto) {
     return this.boothService.updateBooth(id, updateBoothDto);
   }
 

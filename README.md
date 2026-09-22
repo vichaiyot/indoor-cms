@@ -59,6 +59,8 @@
 indoor-cms/
 ├── docker-compose.yml                      # คอนฟิก MongoDB Container
 ├── .env.example                            # ตัวอย่าง Environment Variables
+├── doc/                                    # เอกสารสถาปัตยกรรมและคู่มือเชิงลึก
+│   └── workflow-services-architecture.md   # อธิบายการทำงานของแต่ละ Service & Workflow
 ├── src/
 │   ├── main.ts                             # Bootstrap, ValidationPipe, Swagger setup
 │   ├── app.module.ts                       # Root module เชื่อมต่อ Config และ Mongoose

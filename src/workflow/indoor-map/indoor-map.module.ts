@@ -7,4 +7,4 @@ import { PathModule } from './path/path.module';
   imports: [MapModule, BoothModule, PathModule],
   exports: [MapModule, BoothModule, PathModule],
 })
-export class IndoorMapModule { }
+export class IndoorMapModule {}

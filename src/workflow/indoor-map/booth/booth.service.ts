@@ -5,7 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Booth, BoothDocument } from '../../../schema/indoor-map/booth/booth.schema';
+import {
+  Booth,
+  BoothDocument,
+  BoothShapeType,
+} from '../../../schema/indoor-map/booth/booth.schema';
 import { MapService } from '../map/map.service';
 import { CreateBoothDto } from '../../../dto/indoor-map/booth/create-booth.dto';
 import { UpdateBoothDto } from '../../../dto/indoor-map/booth/update-booth.dto';
@@ -16,7 +20,7 @@ export class BoothService {
     @InjectModel(Booth.name)
     private readonly boothModel: Model<BoothDocument>,
     private readonly mapService: MapService,
-  ) { }
+  ) {}
 
   /**
    * ตรวจสอบว่าตัวเลขอยู่ในขอบเขตพิกัดลูกโลกจริง (WGS84 Spherical) หรือไม่
@@ -26,64 +30,6 @@ export class BoothService {
     return lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
   }
 
-  /**
-   * คำนวณขอบเขต 2D (Footprint Polygon) อัตโนมัติจากตำแหน่ง ขนาด (width, depth) และมุมหมุน (rotation)
-   */
-  private calculateFootprint(
-    x: number,
-    y: number,
-    width: number,
-    depth: number,
-    rotation: number = 0,
-  ): { type: string; coordinates: number[][][] } {
-    if (!width && !depth) {
-      return {
-        type: 'Polygon',
-        coordinates: [[[x, y], [x, y], [x, y], [x, y], [x, y]]],
-      };
-    }
-
-    if (!rotation) {
-      return {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [x, y],
-            [Number((x + width).toFixed(4)), y],
-            [Number((x + width).toFixed(4)), Number((y + depth).toFixed(4))],
-            [x, Number((y + depth).toFixed(4))],
-            [x, y],
-          ],
-        ],
-      };
-    }
-
-    const rad = (rotation * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-
-    const rotatePoint = (px: number, py: number): [number, number] => {
-      const dx = px - x;
-      const dy = py - y;
-      return [
-        Number((x + dx * cos - dy * sin).toFixed(4)),
-        Number((y + dx * sin + dy * cos).toFixed(4)),
-      ];
-    };
-
-    return {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [x, y],
-          rotatePoint(x + width, y),
-          rotatePoint(x + width, y + depth),
-          rotatePoint(x, y + depth),
-          [x, y],
-        ],
-      ],
-    };
-  }
 
   /**
    * จัดรูปแบบการแสดงผล Booth
@@ -117,7 +63,10 @@ export class BoothService {
     } else if (!geo && booth.location?.coordinates) {
       geo = {
         type: 'Point',
-        coordinates: [booth.location.coordinates[0], booth.location.coordinates[1]],
+        coordinates: [
+          booth.location.coordinates[0],
+          booth.location.coordinates[1],
+        ],
       };
     }
 
@@ -141,7 +90,10 @@ export class BoothService {
         height: size.height ?? 0,
       },
       footprint: booth.footprint,
+      shapeType: booth.shapeType || BoothShapeType.RECTANGLE,
+      radius: booth.radius,
       geo,
+      entryNodeId: booth.entryNodeId || null,
       createdAt: booth.createdAt,
       updatedAt: booth.updatedAt,
     };
@@ -164,10 +116,17 @@ export class BoothService {
         type: 'Point',
         coordinates: [Number(position[0]), Number(position[1])],
       };
-    } else if (position && Array.isArray(position.coordinates) && position.coordinates.length >= 2) {
+    } else if (
+      position &&
+      Array.isArray(position.coordinates) &&
+      position.coordinates.length >= 2
+    ) {
       position = {
         type: 'Point',
-        coordinates: [Number(position.coordinates[0]), Number(position.coordinates[1])],
+        coordinates: [
+          Number(position.coordinates[0]),
+          Number(position.coordinates[1]),
+        ],
       };
     } else {
       position = {
@@ -183,7 +142,10 @@ export class BoothService {
       height: createBoothDto.size?.height ?? createBoothDto.height ?? 0,
     };
 
-    // Footprint: บันทึก GeoJSON Polygon ที่ frontend ส่งมา หรือคำนวณอัตโนมัติหากเว้นว่าง
+    const shapeType = createBoothDto.shapeType || BoothShapeType.RECTANGLE;
+    const radius = createBoothDto.radius;
+
+    // Footprint: บันทึก GeoJSON Polygon ที่ผู้ใช้วาดมาจาก Frontend โดยตรง
     let footprint: any = createBoothDto.footprint;
     if (footprint) {
       if (Array.isArray(footprint)) {
@@ -201,29 +163,32 @@ export class BoothService {
           coordinates: footprint.coordinates,
         };
       }
-    } else if (size.width || size.depth) {
-      footprint = this.calculateFootprint(
-        position.coordinates[0],
-        position.coordinates[1],
-        size.width,
-        size.depth,
-        createBoothDto.rotation ?? 0,
-      );
     }
 
     // Geo: รองรับทั้ง GeoJSON Object, Array [lng, lat], และ Flat longitude, latitude
     let geo: any = createBoothDto.geo;
-    if (Array.isArray(geo) && geo.length >= 2 && this.isValidGeo(geo[0], geo[1])) {
+    if (
+      Array.isArray(geo) &&
+      geo.length >= 2 &&
+      this.isValidGeo(geo[0], geo[1])
+    ) {
       geo = {
         type: 'Point',
         coordinates: [Number(geo[0]), Number(geo[1])],
       };
-    } else if (geo && Array.isArray(geo.coordinates) && geo.coordinates.length >= 2 && this.isValidGeo(geo.coordinates[0], geo.coordinates[1])) {
+    } else if (
+      geo &&
+      Array.isArray(geo.coordinates) &&
+      geo.coordinates.length >= 2 &&
+      this.isValidGeo(geo.coordinates[0], geo.coordinates[1])
+    ) {
       geo = {
         type: 'Point',
         coordinates: [Number(geo.coordinates[0]), Number(geo.coordinates[1])],
       };
-    } else if (this.isValidGeo(createBoothDto.longitude, createBoothDto.latitude)) {
+    } else if (
+      this.isValidGeo(createBoothDto.longitude, createBoothDto.latitude)
+    ) {
       geo = {
         type: 'Point',
         coordinates: [createBoothDto.longitude!, createBoothDto.latitude!],
@@ -244,7 +209,10 @@ export class BoothService {
       rotation: createBoothDto.rotation ?? 0,
       size,
       footprint,
+      shapeType,
+      radius,
       geo,
+      entryNodeId: createBoothDto.entryNodeId,
     });
 
     try {
@@ -294,21 +262,38 @@ export class BoothService {
       throw new NotFoundException(`Booth with ID "${id}" not found`);
     }
 
-    if (updateBoothDto.boothNumber) booth.boothNumber = updateBoothDto.boothNumber;
+    if (updateBoothDto.boothNumber)
+      booth.boothNumber = updateBoothDto.boothNumber;
     if (updateBoothDto.name) booth.name = updateBoothDto.name;
-    if (updateBoothDto.description !== undefined) booth.description = updateBoothDto.description;
-    if (updateBoothDto.category !== undefined) booth.category = updateBoothDto.category;
+    if (updateBoothDto.description !== undefined)
+      booth.description = updateBoothDto.description;
+    if (updateBoothDto.category !== undefined)
+      booth.category = updateBoothDto.category;
     if (updateBoothDto.status) booth.status = updateBoothDto.status;
     if (updateBoothDto.type !== undefined) booth.type = updateBoothDto.type;
-    if (updateBoothDto.rotation !== undefined) booth.rotation = updateBoothDto.rotation;
+    if (updateBoothDto.rotation !== undefined)
+      booth.rotation = updateBoothDto.rotation;
+    if (updateBoothDto.shapeType !== undefined)
+      booth.shapeType = updateBoothDto.shapeType;
+    if (updateBoothDto.radius !== undefined)
+      booth.radius = updateBoothDto.radius;
+    if (updateBoothDto.entryNodeId !== undefined)
+      booth.entryNodeId = updateBoothDto.entryNodeId;
 
     // Position
     let newX = updateBoothDto.x;
     let newY = updateBoothDto.y;
-    if (Array.isArray(updateBoothDto.position) && updateBoothDto.position.length >= 2) {
+    if (
+      Array.isArray(updateBoothDto.position) &&
+      updateBoothDto.position.length >= 2
+    ) {
       newX = Number(updateBoothDto.position[0]);
       newY = Number(updateBoothDto.position[1]);
-    } else if (updateBoothDto.position?.coordinates && Array.isArray(updateBoothDto.position.coordinates) && updateBoothDto.position.coordinates.length >= 2) {
+    } else if (
+      updateBoothDto.position?.coordinates &&
+      Array.isArray(updateBoothDto.position.coordinates) &&
+      updateBoothDto.position.coordinates.length >= 2
+    ) {
       newX = Number(updateBoothDto.position.coordinates[0]);
       newY = Number(updateBoothDto.position.coordinates[1]);
     }
@@ -327,7 +312,11 @@ export class BoothService {
     const updatedDepth = updateBoothDto.size?.depth ?? updateBoothDto.depth;
     const updatedHeight = updateBoothDto.size?.height ?? updateBoothDto.height;
 
-    if (updatedWidth !== undefined || updatedDepth !== undefined || updatedHeight !== undefined) {
+    if (
+      updatedWidth !== undefined ||
+      updatedDepth !== undefined ||
+      updatedHeight !== undefined
+    ) {
       booth.size = {
         width: updatedWidth ?? booth.size?.width ?? 0,
         depth: updatedDepth ?? booth.size?.depth ?? 0,
@@ -335,10 +324,12 @@ export class BoothService {
       };
     }
 
-    // Footprint
-    if (updateBoothDto.footprint) {
-      let fp: any = updateBoothDto.footprint;
-      if (Array.isArray(fp)) {
+    // Footprint: อัปเดตเมื่อ Frontend ส่งพิกัดที่แก้ไขมา
+    if (updateBoothDto.footprint !== undefined) {
+      const fp: any = updateBoothDto.footprint;
+      if (!fp) {
+        booth.footprint = undefined;
+      } else if (Array.isArray(fp)) {
         const coords =
           Array.isArray(fp[0]) && Array.isArray(fp[0][0]) ? fp : [fp];
         booth.footprint = {
@@ -353,29 +344,32 @@ export class BoothService {
       } else {
         booth.footprint = fp;
       }
-    } else if (
-      (updateBoothDto.position || updateBoothDto.size || updateBoothDto.x !== undefined || updateBoothDto.y !== undefined || updateBoothDto.width !== undefined || updateBoothDto.depth !== undefined || updateBoothDto.rotation !== undefined) &&
-      booth.position?.coordinates &&
-      booth.size
-    ) {
-      booth.footprint = this.calculateFootprint(
-        booth.position.coordinates[0],
-        booth.position.coordinates[1],
-        booth.size.width ?? 0,
-        booth.size.depth ?? 0,
-        booth.rotation ?? 0,
-      );
     }
 
     // Geo
-    if (Array.isArray(updateBoothDto.geo) && updateBoothDto.geo.length >= 2 && this.isValidGeo(updateBoothDto.geo[0], updateBoothDto.geo[1])) {
+    if (
+      Array.isArray(updateBoothDto.geo) &&
+      updateBoothDto.geo.length >= 2 &&
+      this.isValidGeo(updateBoothDto.geo[0], updateBoothDto.geo[1])
+    ) {
       booth.geo = {
         type: 'Point',
-        coordinates: [Number(updateBoothDto.geo[0]), Number(updateBoothDto.geo[1])],
+        coordinates: [
+          Number(updateBoothDto.geo[0]),
+          Number(updateBoothDto.geo[1]),
+        ],
       };
-    } else if (updateBoothDto.geo?.coordinates && this.isValidGeo(updateBoothDto.geo.coordinates[0], updateBoothDto.geo.coordinates[1])) {
+    } else if (
+      updateBoothDto.geo?.coordinates &&
+      this.isValidGeo(
+        updateBoothDto.geo.coordinates[0],
+        updateBoothDto.geo.coordinates[1],
+      )
+    ) {
       booth.geo = updateBoothDto.geo;
-    } else if (this.isValidGeo(updateBoothDto.longitude, updateBoothDto.latitude)) {
+    } else if (
+      this.isValidGeo(updateBoothDto.longitude, updateBoothDto.latitude)
+    ) {
       booth.geo = {
         type: 'Point',
         coordinates: [updateBoothDto.longitude!, updateBoothDto.latitude!],
@@ -398,7 +392,9 @@ export class BoothService {
   /**
    * 5. ลบบูธ
    */
-  async deleteBooth(id: string): Promise<{ success: boolean; message: string }> {
+  async deleteBooth(
+    id: string,
+  ): Promise<{ success: boolean; message: string }> {
     const booth = await this.boothModel.findById(id).exec();
     if (!booth) {
       throw new NotFoundException(`Booth with ID "${id}" not found`);

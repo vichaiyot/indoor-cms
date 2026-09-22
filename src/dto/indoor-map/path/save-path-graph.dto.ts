@@ -1,4 +1,8 @@
-import { ApiProperty, ApiPropertyOptional, ApiHideProperty } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiHideProperty,
+} from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -48,6 +52,17 @@ export class PathNodeDto {
   @IsString()
   @IsOptional()
   type?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['n2', 'n3'],
+    description:
+      'รายการรหัส Node ID ที่เชื่อมต่อกับจุดนี้โดยตรง (Adjacency List)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  connectedNodeIds?: string[];
 
   // Backward-compatible / Flat fields (hidden from Swagger)
   @ApiHideProperty()
@@ -116,18 +131,21 @@ export class SavePathGraphDto {
         name: 'หน้าทางเข้าฮอลล์ 1',
         type: 'door',
         position: { type: 'Point', coordinates: [100.0, 200.0] },
+        connectedNodeIds: ['n2'],
       },
       {
         id: 'n2',
         name: 'ทางแยกหลัก',
         type: 'intersection',
         position: { type: 'Point', coordinates: [100.0, 340.0] },
+        connectedNodeIds: ['n1', 'n3'],
       },
       {
         id: 'n3',
         name: 'จุดเชื่อมต่อหน้าบูธ A01',
         type: 'waypoint',
         position: { type: 'Point', coordinates: [120.0, 340.0] },
+        connectedNodeIds: ['n2'],
       },
     ],
   })
@@ -136,16 +154,11 @@ export class SavePathGraphDto {
   @Type(() => PathNodeDto)
   nodes: PathNodeDto[];
 
-  @ApiProperty({
-    type: [PathEdgeDto],
-    description: 'รายการเส้นเชื่อมต่อทางเดินระหว่างจุด (Walkway segments)',
-    example: [
-      { from: 'n1', to: 'n2', bidirectional: true, accessible: true },
-      { from: 'n2', to: 'n3', bidirectional: true, accessible: true },
-    ],
-  })
+  // ซ่อน edges จาก Swagger Body Example ตามที่ร้องขอ เพื่อให้แสดงเฉพาะ nodes
+  @ApiHideProperty()
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PathEdgeDto)
-  edges: PathEdgeDto[];
+  edges?: PathEdgeDto[];
 }

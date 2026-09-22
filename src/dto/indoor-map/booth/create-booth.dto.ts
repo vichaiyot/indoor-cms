@@ -1,4 +1,8 @@
-import { ApiProperty, ApiPropertyOptional, ApiHideProperty } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiHideProperty,
+} from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -11,7 +15,10 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { BoothStatus } from '../../../schema/indoor-map/booth/booth.schema';
+import {
+  BoothShapeType,
+  BoothStatus,
+} from '../../../schema/indoor-map/booth/booth.schema';
 
 export class PointDto {
   @ApiProperty({
@@ -25,7 +32,8 @@ export class PointDto {
 
   @ApiProperty({
     example: [120.0, 340.0],
-    description: '2D coordinates array: [x, y] on floor plan canvas or [longitude, latitude] for GPS',
+    description:
+      '2D coordinates array: [x, y] on floor plan canvas or [longitude, latitude] for GPS',
     type: [Number],
   })
   @IsArray()
@@ -55,7 +63,8 @@ export class PolygonDto {
         [120.0, 340.0],
       ],
     ],
-    description: 'GeoJSON Polygon coordinates: array of linear ring coordinate arrays',
+    description:
+      'GeoJSON Polygon coordinates: array of linear ring coordinate arrays',
   })
   @IsArray()
   coordinates: number[][][];
@@ -175,7 +184,7 @@ export class CreateBoothDto {
   @ApiPropertyOptional({
     type: PolygonDto,
     description:
-      '2D Footprint polygon coordinates on canvas: GeoJSON Polygon (บันทึกขอบเขตพื้นที่บูธ 2D)',
+      '2D Footprint polygon coordinates on canvas: GeoJSON Polygon (บันทึกขอบเขตพื้นที่บูธ 2D ที่คำนวณจาก Frontend)',
     example: {
       type: 'Polygon',
       coordinates: [
@@ -193,8 +202,28 @@ export class CreateBoothDto {
   footprint?: any;
 
   @ApiPropertyOptional({
+    enum: BoothShapeType,
+    default: BoothShapeType.RECTANGLE,
+    description:
+      'ประเภทรูปทรงเรขาคณิตของบูธ (rectangle = สี่เหลี่ยม, circle = ทรงกลม, hexagon = หกเหลี่ยม, custom = ทรงอิสระ/ตามแนวอาคาร)',
+  })
+  @IsEnum(BoothShapeType)
+  @IsOptional()
+  shapeType?: BoothShapeType;
+
+  @ApiPropertyOptional({
+    example: 25.0,
+    description:
+      'รัศมีของบูธ สำหรับทรงกลมหรือหลายเหลี่ยมด้านเท่า (circle / hexagon)',
+  })
+  @IsNumber()
+  @IsOptional()
+  radius?: number;
+
+  @ApiPropertyOptional({
     type: PointDto,
-    description: 'Real-world GPS coordinates: GeoJSON Point [longitude, latitude]',
+    description:
+      'Real-world GPS coordinates: GeoJSON Point [longitude, latitude]',
     example: {
       type: 'Point',
       coordinates: [100.5489, 13.9113],
@@ -202,6 +231,15 @@ export class CreateBoothDto {
   })
   @IsOptional()
   geo?: any;
+
+  @ApiPropertyOptional({
+    example: 'n1',
+    description:
+      'รหัส Node ทางเดินหน้าบูธ สำหรับใช้เป็นจุดเริ่มต้น/ปลายทางในการนำทาง (Navigation Entry Node ID)',
+  })
+  @IsString()
+  @IsOptional()
+  entryNodeId?: string;
 
   // ============================================================
   // Flat / backward-compatibility fields (hidden from Swagger to keep docs clean)

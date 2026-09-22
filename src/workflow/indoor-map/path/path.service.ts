@@ -5,36 +5,56 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { PathGraph, PathGraphDocument } from '../../../schema/indoor-map/path/path-graph.schema';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  PathNode,
+  PathNodeDocument,
+  PathEdge,
+} from '../../../schema/indoor-map/path/path-graph.schema';
 import { MapService } from '../map/map.service';
-import { SavePathGraphDto } from '../../../dto/indoor-map/path/save-path-graph.dto';
+import {
+  SavePathGraphDto,
+  PathNodeDto,
+  PathEdgeDto,
+} from '../../../dto/indoor-map/path/save-path-graph.dto';
 import { PatchPathGraphDto } from '../../../dto/indoor-map/path/patch-path-graph.dto';
 
 @Injectable()
 export class PathService {
   constructor(
-    @InjectModel(PathGraph.name)
-    private readonly pathGraphModel: Model<PathGraphDocument>,
+    @InjectModel(PathNode.name)
+    private readonly pathNodeModel: Model<PathNodeDocument>,
     private readonly mapService: MapService,
-  ) { }
+  ) {}
 
   /**
    * Helper: ตรวจสอบความถูกต้องของ Nodes พร้อมเช็ค Boundary และป้องกัน Duplicate ID
    */
   private processAndValidateNodes(
-    nodes: any[],
+    nodes: PathNodeDto[],
     map: { width?: number; height?: number },
-  ): { processedNodes: any[]; nodeMap: Record<string, { x: number; y: number }> } {
-    const nodeMap: Record<string, { x: number; y: number }> = {};
+  ): {
+    processedNodes: Array<{
+      id: string;
+      name?: string;
+      type: string;
+      position: { type: string; coordinates: number[] };
+      connectedNodeIds: string[];
+    }>;
+    nodeMap: Map<string, { x: number; y: number }>;
+  } {
+    const nodeMap = new Map<string, { x: number; y: number }>();
     const seenIds = new Set<string>();
 
     const processedNodes = nodes.map((node) => {
       if (seenIds.has(node.id)) {
-        throw new BadRequestException(`พบ Node ID ซ้ำซ้อนในรายการ: "${node.id}"`);
+        throw new BadRequestException(
+          `พบ Node ID ซ้ำซ้อนในรายการ: "${node.id}"`,
+        );
       }
       seenIds.add(node.id);
 
-      let position: any = node.position;
+      const position: any = node.position;
       let x = 0;
       let y = 0;
 
@@ -65,7 +85,7 @@ export class PathService {
         );
       }
 
-      nodeMap[node.id] = { x, y };
+      nodeMap.set(node.id, { x, y });
 
       return {
         id: node.id,
@@ -75,6 +95,9 @@ export class PathService {
           type: 'Point',
           coordinates: [x, y],
         },
+        connectedNodeIds: Array.isArray(node.connectedNodeIds)
+          ? [...node.connectedNodeIds]
+          : [],
       };
     });
 
@@ -82,79 +105,124 @@ export class PathService {
   }
 
   /**
-   * Helper: ตรวจสอบ Edges, ป้องกัน Self-loop, ป้องกัน Duplicate Edge และคำนวณ Euclidean distance
+   * Helper: แปลง edges เป็น connectedNodeIds ในแต่ละ Node และตรวจสอบความสมบูรณ์ของการเชื่อมโยง
    */
-  private processAndValidateEdges(
-    edges: any[],
-    nodeMap: Record<string, { x: number; y: number }>,
-  ): any[] {
-    const seenEdges = new Set<string>();
-
-    return edges.map((edge) => {
-      // 1. ป้องกัน Self-loop
-      if (edge.from === edge.to) {
-        throw new BadRequestException(
-          `เส้นทางเชื่อมโยง (Edge) ไม่สามารถเชื่อมจุดตัวเองได้ (Self-loop detected): "${edge.from}"`,
-        );
-      }
-
-      // 2. ป้องกันจุดไม่มีอยู่จริง
-      const fromNode = nodeMap[edge.from];
-      const toNode = nodeMap[edge.to];
-
-      if (!fromNode) {
-        throw new BadRequestException(
-          `Edge ระบุจุดเริ่มต้น from: "${edge.from}" ที่ไม่มีอยู่ใน nodes`,
-        );
-      }
-      if (!toNode) {
-        throw new BadRequestException(
-          `Edge ระบุจุดปลายทาง to: "${edge.to}" ที่ไม่มีอยู่ใน nodes`,
-        );
-      }
-
-      // 3. ป้องกัน Duplicate Edge
-      const edgeKey = `${edge.from}->${edge.to}`;
-      if (seenEdges.has(edgeKey)) {
-        throw new BadRequestException(
-          `พบเส้นทางเชื่อมโยงซ้ำซ้อน: จาก "${edge.from}" ไป "${edge.to}"`,
-        );
-      }
-      seenEdges.add(edgeKey);
-
-      let weight = edge.weight;
-      if (weight === undefined || weight === null || weight <= 0) {
-        const dx = toNode.x - fromNode.x;
-        const dy = toNode.y - fromNode.y;
-        weight = Number(Math.hypot(dx, dy).toFixed(2));
-      }
-
-      return {
-        from: edge.from,
-        to: edge.to,
-        weight,
-        bidirectional: edge.bidirectional ?? true,
-        accessible: edge.accessible ?? true,
-      };
-    });
-  }
-
-  /**
-   * Helper: คำนวณหา Isolated Nodes (จุดที่ไม่มีเส้นทางเชื่อมโยงเลย)
-   */
-  private findIsolatedNodes(nodes: any[], edges: any[]): string[] {
-    const connectedNodeIds = new Set<string>();
-    for (const edge of edges) {
-      connectedNodeIds.add(edge.from);
-      connectedNodeIds.add(edge.to);
+  private mergeEdgesIntoNodes(
+    nodes: Array<{
+      id: string;
+      name?: string;
+      type: string;
+      position: { type: string; coordinates: number[] };
+      connectedNodeIds: string[];
+    }>,
+    edges?: PathEdgeDto[],
+  ): void {
+    const nodeDict = new Map<string, { connectedNodeIds: Set<string> }>();
+    for (const n of nodes) {
+      nodeDict.set(n.id, { connectedNodeIds: new Set(n.connectedNodeIds) });
     }
-    return nodes
-      .map((n) => n.id)
-      .filter((id) => !connectedNodeIds.has(id));
+
+    if (edges && Array.isArray(edges)) {
+      for (const edge of edges) {
+        if (edge.from === edge.to) {
+          throw new BadRequestException(
+            `เส้นทางเชื่อมโยง (Edge) ไม่สามารถเชื่อมจุดตัวเองได้ (Self-loop): "${edge.from}"`,
+          );
+        }
+
+        const fromNode = nodeDict.get(edge.from);
+        const toNode = nodeDict.get(edge.to);
+
+        if (!fromNode) {
+          throw new BadRequestException(
+            `Edge ระบุจุดเริ่มต้น from: "${edge.from}" ที่ไม่มีอยู่ใน nodes`,
+          );
+        }
+        if (!toNode) {
+          throw new BadRequestException(
+            `Edge ระบุจุดปลายทาง to: "${edge.to}" ที่ไม่มีอยู่ใน nodes`,
+          );
+        }
+
+        fromNode.connectedNodeIds.add(edge.to);
+        if (edge.bidirectional !== false) {
+          toNode.connectedNodeIds.add(edge.from);
+        }
+      }
+    }
+
+    // Assign กลับและตัด self-loops หรือ id ที่ไม่มีอยู่จริง
+    for (const n of nodes) {
+      const entry = nodeDict.get(n.id);
+      if (entry) {
+        n.connectedNodeIds = Array.from(entry.connectedNodeIds).filter(
+          (targetId) => targetId !== n.id && nodeDict.has(targetId),
+        );
+      }
+    }
   }
 
   /**
-   * 1. บันทึกหรืออัปเดตโครงข่ายเส้นทางเดินทั้งก้อน (Save / Upsert Full Path Graph)
+   * Helper: คำนวณ Edges อัตโนมัติจาก Adjacency List (connectedNodeIds) ของแต่ละ Node
+   * คืนค่า PathEdge[] ที่มี open: true, verified: true ครบถ้วน เพื่อให้ findRoute ของ Frontend ทำงานได้ทันที
+   */
+  deriveEdges(
+    nodes: Array<{
+      id?: string;
+      nodeId?: string;
+      position?: { type?: string; coordinates?: number[] };
+      connectedNodeIds?: string[];
+    }>,
+  ): PathEdge[] {
+    const nodeMap = new Map<
+      string,
+      {
+        id?: string;
+        nodeId?: string;
+        position?: { type?: string; coordinates?: number[] };
+        connectedNodeIds?: string[];
+      }
+    >();
+    for (const n of nodes) {
+      const id = n.nodeId || n.id || '';
+      if (id) nodeMap.set(id, n);
+    }
+
+    const seen = new Set<string>();
+    const edges: PathEdge[] = [];
+
+    for (const n of nodes) {
+      const fromId = n.nodeId || n.id || '';
+      if (!fromId) continue;
+      const targets = n.connectedNodeIds ?? [];
+
+      for (const toId of targets) {
+        const targetNode = nodeMap.get(toId);
+        if (!targetNode) continue;
+
+        const edgeKey =
+          fromId < toId ? `${fromId}<->${toId}` : `${toId}<->${fromId}`;
+        if (seen.has(edgeKey)) continue;
+        seen.add(edgeKey);
+
+        edges.push({
+          id: `edge-${fromId}-${toId}`,
+          from: fromId,
+          to: toId,
+          kind: 'walk',
+          bidirectional: true,
+          accessible: true,
+          open: true,
+          verified: true,
+        });
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * 1. บันทึกหรืออัปเดตโครงข่ายเส้นทางเดิน (1 Node = 1 Document ใน collection path_nodes)
    */
   async savePathGraph(
     mapId: string,
@@ -163,46 +231,79 @@ export class PathService {
     const map = await this.mapService.findMapById(mapId);
     const resolvedMapId = map._id;
 
-    // ตรวจสอบความถูกต้องของ Nodes และ Edges ด้วย Validator
-    const { processedNodes, nodeMap } = this.processAndValidateNodes(
+    // 1. ตรวจสอบความถูกต้องของ Nodes
+    const { processedNodes } = this.processAndValidateNodes(
       savePathGraphDto.nodes,
       map,
     );
-    const processedEdges = this.processAndValidateEdges(
-      savePathGraphDto.edges,
-      nodeMap,
-    );
-    const isolatedNodeIds = this.findIsolatedNodes(processedNodes, processedEdges);
 
-    const pathGraph: any = await this.pathGraphModel
-      .findOneAndUpdate(
-        { mapId: resolvedMapId },
-        {
-          mapId: resolvedMapId,
-          nodes: processedNodes,
-          edges: processedEdges,
+    // 2. หลอมรวม Edges เข้ากับ connectedNodeIds ของแต่ละโหนด
+    this.mergeEdgesIntoNodes(processedNodes, savePathGraphDto.edges);
+
+    // 3. บันทึกแบบ Bulk Upsert (1 Node = 1 MongoDB Document อิสระ)
+    // ไม่เก็บเป็น Array ยัดก้อนเดียวใน Map Document ป้องกันข้อจำกัดเรื่องขนาด 16MB และรองรับ 300+ บูธได้ไม่จำกัด
+    const bulkOps = processedNodes.map((node) => ({
+      updateOne: {
+        filter: { mapId: resolvedMapId, nodeId: node.id },
+        update: {
+          $set: {
+            mapId: resolvedMapId,
+            nodeId: node.id,
+            name: node.name,
+            type: node.type,
+            position: node.position,
+            connectedNodeIds: node.connectedNodeIds,
+          },
+          $setOnInsert: { _id: uuidv4() },
         },
-        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
-      )
+        upsert: true,
+      },
+    }));
+
+    if (bulkOps.length > 0) {
+      await this.pathNodeModel.bulkWrite(bulkOps as any);
+    }
+
+    // 4. ลบ Node เดิมของแผนที่นี้ที่ไม่ได้ส่งมาในรอบนี้ (Synchronize state)
+    const incomingNodeIds = processedNodes.map((n) => n.id);
+    await this.pathNodeModel.deleteMany({
+      mapId: resolvedMapId,
+      nodeId: { $nin: incomingNodeIds },
+    });
+
+    // 5. ดึงข้อมูล Nodes ทั้งหมดของแผนที่นี้กลับมา
+    const allNodes = await this.pathNodeModel
+      .find({ mapId: resolvedMapId })
       .lean()
       .exec();
 
+    const formattedNodes = allNodes.map((n) => ({
+      id: n.nodeId,
+      nodeId: n.nodeId,
+      name: n.name,
+      type: n.type,
+      position: n.position,
+      connectedNodeIds: n.connectedNodeIds || [],
+    }));
+
+    const edges = this.deriveEdges(formattedNodes);
+    const isolatedNodes = formattedNodes.filter(
+      (n) => !n.connectedNodeIds || n.connectedNodeIds.length === 0,
+    );
+
     return {
-      id: pathGraph._id,
-      mapId: pathGraph.mapId,
-      totalNodes: pathGraph.nodes.length,
-      totalEdges: pathGraph.edges.length,
-      isolatedNodesCount: isolatedNodeIds.length,
-      isolatedNodeIds,
-      nodes: pathGraph.nodes,
-      edges: pathGraph.edges,
-      createdAt: pathGraph.createdAt,
-      updatedAt: pathGraph.updatedAt,
+      mapId: resolvedMapId,
+      totalNodes: formattedNodes.length,
+      totalEdges: edges.length,
+      isolatedNodesCount: isolatedNodes.length,
+      isolatedNodeIds: isolatedNodes.map((n) => n.id),
+      nodes: formattedNodes,
+      edges,
     };
   }
 
   /**
-   * 2. อัปเดตโครงข่ายเส้นทางเดินบางส่วน (Safe Partial Update / PATCH)
+   * 2. อัปเดตโครงข่ายเส้นทางเดินบางส่วน (Partial Update / PATCH)
    */
   async patchPathGraph(
     mapId: string,
@@ -211,50 +312,33 @@ export class PathService {
     const map = await this.mapService.findMapById(mapId);
     const resolvedMapId = map._id;
 
-    const existing = await this.pathGraphModel.findOne({ mapId: resolvedMapId }).exec();
-    if (!existing) {
-      throw new NotFoundException(
-        `ยังไม่มีโครงข่ายเส้นทางเดินสำหรับแผนที่ "${map.name}" กรุณาบันทึกเริ่มต้นด้วย POST ก่อน`,
+    // 1. ลบ Node (Cascade ลบออกจาก connectedNodeIds ของโหนดอื่นๆ ด้วย)
+    if (patchDto.deleteNodeIds && patchDto.deleteNodeIds.length > 0) {
+      await this.pathNodeModel.deleteMany({
+        mapId: resolvedMapId,
+        nodeId: { $in: patchDto.deleteNodeIds },
+      });
+      await this.pathNodeModel.updateMany(
+        { mapId: resolvedMapId },
+        { $pull: { connectedNodeIds: { $in: patchDto.deleteNodeIds } } as any },
       );
     }
 
-    let nodes: any[] = existing.nodes.map((n) => ({
-      id: n.id,
-      name: n.name,
-      type: n.type,
-      position: {
-        type: 'Point',
-        coordinates: [n.position.coordinates[0], n.position.coordinates[1]],
-      },
-    }));
-
-    let edges: any[] = existing.edges.map((e) => ({
-      from: e.from,
-      to: e.to,
-      weight: e.weight,
-      bidirectional: e.bidirectional,
-      accessible: e.accessible,
-    }));
-
-    // 1. ลบ Node (Safe Cascade: ลบทั้ง Node และ Edges ที่ต่ออยู่ทั้งหมดอัตโนมัติ)
-    if (patchDto.deleteNodeIds && patchDto.deleteNodeIds.length > 0) {
-      const deleteSet = new Set(patchDto.deleteNodeIds);
-      nodes = nodes.filter((n) => !deleteSet.has(n.id));
-      edges = edges.filter((e) => !deleteSet.has(e.from) && !deleteSet.has(e.to));
-    }
-
-    // 2. ลบ Edge เฉพาะเส้น
+    // 2. ลบ Edges
     if (patchDto.deleteEdges && patchDto.deleteEdges.length > 0) {
       for (const del of patchDto.deleteEdges) {
-        edges = edges.filter(
-          (e) =>
-            !(e.from === del.from && e.to === del.to) &&
-            !(e.bidirectional && e.from === del.to && e.to === del.from),
+        await this.pathNodeModel.updateOne(
+          { mapId: resolvedMapId, nodeId: del.from },
+          { $pull: { connectedNodeIds: del.to } as any },
+        );
+        await this.pathNodeModel.updateOne(
+          { mapId: resolvedMapId, nodeId: del.to },
+          { $pull: { connectedNodeIds: del.from } as any },
         );
       }
     }
 
-    // 3. ย้ายตำแหน่ง Node (Move Nodes) + คำนวณระยะทาง weight ของ Edges ที่เชื่อมอยู่ใหม่ให้อัตโนมัติ!
+    // 3. ย้ายตำแหน่ง Node (Move Nodes)
     if (patchDto.moveNodes && patchDto.moveNodes.length > 0) {
       for (const move of patchDto.moveNodes) {
         if (map.width && (move.x < 0 || move.x > map.width)) {
@@ -268,131 +352,99 @@ export class PathService {
           );
         }
 
-        const targetNode = nodes.find((n) => n.id === move.id);
-        if (!targetNode) {
+        const res = await this.pathNodeModel.updateOne(
+          { mapId: resolvedMapId, nodeId: move.id },
+          { $set: { 'position.coordinates': [move.x, move.y] } },
+        );
+        if (res.matchedCount === 0) {
           throw new NotFoundException(
-            `ไม่พบ Node ID "${move.id}" ในโครงข่ายที่ต้องการย้ายตำแหน่ง`,
+            `ไม่พบ Node ID "${move.id}" ในแผนที่นี้ที่ต้องการย้ายตำแหน่ง`,
           );
-        }
-        targetNode.position.coordinates = [move.x, move.y];
-      }
-
-      // สร้าง currentMap ล่าสุดเพื่อคำนวณระยะทางใหม่
-      const currentMap: Record<string, { x: number; y: number }> = {};
-      for (const n of nodes) {
-        currentMap[n.id] = {
-          x: n.position.coordinates[0],
-          y: n.position.coordinates[1],
-        };
-      }
-
-      const movedIds = new Set(patchDto.moveNodes.map((m) => m.id));
-      for (const edge of edges) {
-        if (movedIds.has(edge.from) || movedIds.has(edge.to)) {
-          const fromPt = currentMap[edge.from];
-          const toPt = currentMap[edge.to];
-          if (fromPt && toPt) {
-            edge.weight = Number(
-              Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y).toFixed(2),
-            );
-          }
         }
       }
     }
 
     // 4. เพิ่มหรืออัปเดต Nodes ใหม่
     if (patchDto.addNodes && patchDto.addNodes.length > 0) {
-      const { processedNodes: newNodes } = this.processAndValidateNodes(
+      const { processedNodes } = this.processAndValidateNodes(
         patchDto.addNodes,
         map,
       );
-      for (const n of newNodes) {
-        const idx = nodes.findIndex((existingNode) => existingNode.id === n.id);
-        if (idx >= 0) {
-          nodes[idx] = n;
-        } else {
-          nodes.push(n);
-        }
-      }
+      const bulkOps = processedNodes.map((n) => ({
+        updateOne: {
+          filter: { mapId: resolvedMapId, nodeId: n.id },
+          update: {
+            $set: {
+              mapId: resolvedMapId,
+              nodeId: n.id,
+              name: n.name,
+              type: n.type,
+              position: n.position,
+              ...(n.connectedNodeIds.length > 0
+                ? { connectedNodeIds: n.connectedNodeIds }
+                : {}),
+            },
+            $setOnInsert: { _id: uuidv4() },
+          },
+          upsert: true,
+        },
+      }));
+      await this.pathNodeModel.bulkWrite(bulkOps as any);
     }
 
     // 5. เพิ่ม Edges ใหม่
     if (patchDto.addEdges && patchDto.addEdges.length > 0) {
-      const nodeMap: Record<string, { x: number; y: number }> = {};
-      for (const n of nodes) {
-        nodeMap[n.id] = {
-          x: n.position.coordinates[0],
-          y: n.position.coordinates[1],
-        };
-      }
-      const newProcessedEdges = this.processAndValidateEdges(
-        patchDto.addEdges,
-        nodeMap,
-      );
-      for (const edge of newProcessedEdges) {
-        const idx = edges.findIndex(
-          (e) => e.from === edge.from && e.to === edge.to,
+      for (const edge of patchDto.addEdges) {
+        await this.pathNodeModel.updateOne(
+          { mapId: resolvedMapId, nodeId: edge.from },
+          { $addToSet: { connectedNodeIds: edge.to } as any },
         );
-        if (idx >= 0) {
-          edges[idx] = edge;
-        } else {
-          edges.push(edge);
+        if (edge.bidirectional !== false) {
+          await this.pathNodeModel.updateOne(
+            { mapId: resolvedMapId, nodeId: edge.to },
+            { $addToSet: { connectedNodeIds: edge.from } as any },
+          );
         }
       }
     }
 
-    // ตรวจสอบความถูกต้องภาพรวมอีกครั้งก่อนบันทึก
-    const finalNodeMap: Record<string, { x: number; y: number }> = {};
-    for (const n of nodes) {
-      finalNodeMap[n.id] = {
-        x: n.position.coordinates[0],
-        y: n.position.coordinates[1],
-      };
-    }
-    const validatedEdges = this.processAndValidateEdges(edges, finalNodeMap);
-    const isolatedNodeIds = this.findIsolatedNodes(nodes, validatedEdges);
-
-    existing.nodes = nodes as any;
-    existing.edges = validatedEdges as any;
-    const saved: any = await existing.save();
-
-    return {
-      id: saved._id,
-      mapId: saved.mapId,
-      totalNodes: saved.nodes.length,
-      totalEdges: saved.edges.length,
-      isolatedNodesCount: isolatedNodeIds.length,
-      isolatedNodeIds,
-      nodes: saved.nodes,
-      edges: saved.edges,
-      createdAt: saved.createdAt,
-      updatedAt: saved.updatedAt,
-    };
+    return this.findPathGraphByMapId(mapId);
   }
 
   /**
-   * 3. ดึงโครงข่ายเส้นทางเดินของแผนที่
+   * 3. ดึงโครงข่ายเส้นทางเดินของแผนที่ (100% Compatible กับ findRoute ของ Frontend)
    */
   async findPathGraphByMapId(mapId: string): Promise<any> {
     const map = await this.mapService.findMapById(mapId);
     const resolvedMapId = map._id;
 
-    const pathGraph = await this.pathGraphModel
-      .findOne({ mapId: resolvedMapId })
+    // ค้นหา Node ทั้งหมดในเสี้ยววินาทีด้วย Index { mapId: 1 }
+    const nodes = await this.pathNodeModel
+      .find({ mapId: resolvedMapId })
       .lean()
       .exec();
 
-    const nodes = pathGraph?.nodes ?? [];
-    const edges = pathGraph?.edges ?? [];
-    const isolatedNodeIds = this.findIsolatedNodes(nodes, edges);
+    const formattedNodes = nodes.map((n) => ({
+      id: n.nodeId,
+      nodeId: n.nodeId,
+      name: n.name,
+      type: n.type,
+      position: n.position,
+      connectedNodeIds: n.connectedNodeIds || [],
+    }));
+
+    const edges = this.deriveEdges(formattedNodes);
+    const isolatedNodes = formattedNodes.filter(
+      (n) => !n.connectedNodeIds || n.connectedNodeIds.length === 0,
+    );
 
     return {
       mapId: resolvedMapId,
-      totalNodes: nodes.length,
+      totalNodes: formattedNodes.length,
       totalEdges: edges.length,
-      isolatedNodesCount: isolatedNodeIds.length,
-      isolatedNodeIds,
-      nodes,
+      isolatedNodesCount: isolatedNodes.length,
+      isolatedNodeIds: isolatedNodes.map((n) => n.id),
+      nodes: formattedNodes,
       edges,
     };
   }
@@ -406,7 +458,10 @@ export class PathService {
     const map = await this.mapService.findMapById(mapId);
     const resolvedMapId = map._id;
 
-    await this.pathGraphModel.deleteOne({ mapId: resolvedMapId }).exec();
-    return { success: true, message: `Path graph for map "${map.name}" deleted` };
+    await this.pathNodeModel.deleteMany({ mapId: resolvedMapId }).exec();
+    return {
+      success: true,
+      message: `Path nodes for map "${map.name}" deleted successfully`,
+    };
   }
 }

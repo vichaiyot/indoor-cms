@@ -7,8 +7,14 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Map, MapDocument } from '../../../schema/indoor-map/map/map.schema';
-import { Booth, BoothDocument } from '../../../schema/indoor-map/booth/booth.schema';
-import { PathGraph, PathGraphDocument } from '../../../schema/indoor-map/path/path-graph.schema';
+import {
+  Booth,
+  BoothDocument,
+} from '../../../schema/indoor-map/booth/booth.schema';
+import {
+  PathNode,
+  PathNodeDocument,
+} from '../../../schema/indoor-map/path/path-graph.schema';
 import { CreateMapDto } from '../../../dto/indoor-map/map/create-map.dto';
 import { UpdateMapDto } from '../../../dto/indoor-map/map/update-map.dto';
 
@@ -19,9 +25,9 @@ export class MapService {
     private readonly mapModel: Model<MapDocument>,
     @InjectModel(Booth.name)
     private readonly boothModel: Model<BoothDocument>,
-    @InjectModel(PathGraph.name)
-    private readonly pathGraphModel: Model<PathGraphDocument>,
-  ) { }
+    @InjectModel(PathNode.name)
+    private readonly pathNodeModel: Model<PathNodeDocument>,
+  ) {}
 
   /**
    * ตรวจสอบว่าพิกัดภูมิศาสตร์โลกจริงอยู่ในขอบเขต WGS84 หรือไม่
@@ -134,6 +140,8 @@ export class MapService {
     totalBooths: number;
     booths: any[];
     paths: {
+      totalNodes: number;
+      totalEdges: number;
       nodes: any[];
       edges: any[];
     } | null;
@@ -147,24 +155,35 @@ export class MapService {
     delete (map as any)._id;
     delete (map as any).__v;
 
-    const [booths, pathGraph] = await Promise.all([
+    const [booths, nodes] = await Promise.all([
       this.boothModel.find({ mapId: id }).lean().exec(),
-      this.pathGraphModel.findOne({ mapId: id }).lean().exec(),
+      this.pathNodeModel.find({ mapId: id }).lean().exec(),
     ]);
 
     const formattedBooths = booths.map((booth) => this.formatBooth(booth));
+    const formattedNodes = nodes.map((node) => ({
+      id: node.nodeId,
+      nodeId: node.nodeId,
+      name: node.name,
+      type: node.type,
+      position: node.position,
+      connectedNodeIds: node.connectedNodeIds || [],
+    }));
+
+    // คำนวณ edges อัตโนมัติจาก connectedNodeIds เพื่อให้ findRoute ของ Frontend ทำงานได้ 100%
+    const edges = this.deriveEdges(formattedNodes);
 
     return {
       ...map,
       id,
       totalBooths: formattedBooths.length,
       booths: formattedBooths,
-      paths: pathGraph
-        ? {
-            nodes: pathGraph.nodes || [],
-            edges: pathGraph.edges || [],
-          }
-        : null,
+      paths: {
+        totalNodes: formattedNodes.length,
+        totalEdges: edges.length,
+        nodes: formattedNodes,
+        edges,
+      },
     };
   }
 
@@ -200,7 +219,10 @@ export class MapService {
     } else if (!geo && booth.location?.coordinates) {
       geo = {
         type: 'Point',
-        coordinates: [booth.location.coordinates[0], booth.location.coordinates[1]],
+        coordinates: [
+          booth.location.coordinates[0],
+          booth.location.coordinates[1],
+        ],
       };
     }
 
@@ -225,9 +247,68 @@ export class MapService {
       },
       footprint: booth.footprint,
       geo,
+      entryNodeId: booth.entryNodeId || null,
       createdAt: booth.createdAt,
       updatedAt: booth.updatedAt,
     };
+  }
+
+  /**
+   * Helper คำนวณ Edge อัตโนมัติจาก connectedNodeIds ของแต่ละ Node
+   */
+  private deriveEdges(
+    nodes: Array<{
+      id: string;
+      nodeId: string;
+      name?: string;
+      type?: string;
+      position: { type?: string; coordinates: number[] };
+      connectedNodeIds: string[];
+    }>,
+  ): any[] {
+    const nodeMap = new globalThis.Map<
+      string,
+      {
+        id: string;
+        nodeId: string;
+        name?: string;
+        type?: string;
+        position: { type?: string; coordinates: number[] };
+        connectedNodeIds: string[];
+      }
+    >();
+    for (const n of nodes) {
+      nodeMap.set(n.nodeId, n);
+    }
+
+    const seen = new Set<string>();
+    const edges: any[] = [];
+
+    for (const n of nodes) {
+      const fromId = n.nodeId;
+      for (const toId of n.connectedNodeIds ?? []) {
+        const targetNode = nodeMap.get(toId);
+        if (!targetNode) continue;
+
+        const edgeKey =
+          fromId < toId ? `${fromId}<->${toId}` : `${toId}<->${fromId}`;
+        if (seen.has(edgeKey)) continue;
+        seen.add(edgeKey);
+
+        edges.push({
+          id: `edge-${fromId}-${toId}`,
+          from: fromId,
+          to: toId,
+          kind: 'walk',
+          bidirectional: true,
+          accessible: true,
+          open: true,
+          verified: true,
+        });
+      }
+    }
+
+    return edges;
   }
 
   /**
@@ -240,12 +321,36 @@ export class MapService {
     await Promise.all([
       this.mapModel.findByIdAndDelete(mapId).exec(),
       this.boothModel.deleteMany({ mapId }).exec(),
-      this.pathGraphModel.deleteOne({ mapId }).exec(),
+      this.pathNodeModel.deleteMany({ mapId }).exec(),
     ]);
 
     return {
       success: true,
       message: `Map "${map.name}" and its associated booths and path graph deleted successfully`,
     };
+  }
+
+  /**
+   * 6. อัปโหลดรูปแปลนอาคาร (Blueprint Upload) และอัปเดต imageUrl ของ Map อัตโนมัติ
+   */
+  async uploadBlueprint(
+    mapId: string,
+    file: Express.Multer.File,
+    width?: number,
+    height?: number,
+  ): Promise<Map> {
+    const map = await this.findMapById(mapId);
+
+    // เก็บ relative path สำหรับ static file serving
+    map.imageUrl = `/uploads/${file.filename}`;
+
+    if (width !== undefined && !isNaN(Number(width))) {
+      map.width = Number(width);
+    }
+    if (height !== undefined && !isNaN(Number(height))) {
+      map.height = Number(height);
+    }
+
+    return await map.save();
   }
 }

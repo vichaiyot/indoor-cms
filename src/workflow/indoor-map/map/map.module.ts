@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Map, MapSchema } from '../../../schema/indoor-map/map/map.schema';
-import { Booth, BoothSchema } from '../../../schema/indoor-map/booth/booth.schema';
-import { PathGraph, PathGraphSchema } from '../../../schema/indoor-map/path/path-graph.schema';
+import {
+  Booth,
+  BoothSchema,
+} from '../../../schema/indoor-map/booth/booth.schema';
+import {
+  PathNode,
+  PathNodeSchema,
+} from '../../../schema/indoor-map/path/path-graph.schema';
 import { MapService } from './map.service';
 import { MapController } from './map.controller';
 
@@ -11,11 +17,11 @@ import { MapController } from './map.controller';
     MongooseModule.forFeature([
       { name: Map.name, schema: MapSchema },
       { name: Booth.name, schema: BoothSchema },
-      { name: PathGraph.name, schema: PathGraphSchema },
+      { name: PathNode.name, schema: PathNodeSchema },
     ]),
   ],
   controllers: [MapController],
   providers: [MapService],
   exports: [MapService, MongooseModule],
 })
-export class MapModule { }
+export class MapModule {}
